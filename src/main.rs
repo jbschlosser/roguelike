@@ -47,6 +47,26 @@ struct WorldMap {
     tiles: Vec<Tile>
 }
 
+struct Room {
+    x: i32,
+    y: i32,
+    width: i32,
+    height: i32
+}
+
+impl Room {
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Room {x: x, y: y, width: width, height: height}
+    }
+    pub fn overlaps(&self, other: &Room) -> bool {
+        let (xmin1, xmax1, xmin2, xmax2) = (self.x, self.x + self.width,
+            other.x, other.x + other.width);
+        let (ymin1, ymax1, ymin2, ymax2) = (self.y, self.y + self.height,
+            other.y, other.y + other.height);
+        (xmax1 >= xmin2) && (xmax2 >= xmin1) && (ymax1 >= ymin2) && (ymax2 >= ymin1)
+    }
+}
+
 impl WorldMap {
     pub fn generate<R: Rng>(rng: &mut R, width: i32, height: i32) -> Self {
         assert!(width > 0);
@@ -57,7 +77,45 @@ impl WorldMap {
             tiles.push(Tile::new(Terrain::Floor));
         }
 
-        WorldMap {width: width, height: height, tiles: tiles}
+        let mut world = WorldMap {width: width, height: height, tiles: tiles};
+
+        // Generate rooms.
+        let mut rooms: Vec<Room> = Vec::new();
+        for i in 0..60 {
+            let room_width = rng.gen_range::<i32>(3, 15);
+            let room_height = rng.gen_range::<i32>(3, 15);
+            let room_x = rng.gen_range::<i32>(0, width - room_width);
+            let room_y = rng.gen_range::<i32>(0, height - room_height);
+            let room = Room::new(room_x, room_y, room_width, room_height);
+            let mut available = true;
+            for chosen in rooms.iter() {
+                if chosen.overlaps(&room) {
+                    available = false;
+                    break;
+                }
+            }
+            if available {
+                println!("{}x{} @ {}x{}", room_width, room_height, room_x, room_y);
+                rooms.push(room);
+            } else {
+                println!("Couldn't fit it");
+            }
+        }
+
+        for room in rooms.iter() {
+            for x in room.x..room.x+room.width {
+                world.get_tile_mut(Location::new(x, room.y)).terrain = Terrain::Wall;
+                world.get_tile_mut(Location::new(x, room.y+room.height-1)).terrain =
+                    Terrain::Wall;
+            }
+            for y in room.y..room.y+room.height {
+                world.get_tile_mut(Location::new(room.x, y)).terrain = Terrain::Wall;
+                world.get_tile_mut(Location::new(room.x+room.width-1, y)).terrain =
+                    Terrain::Wall;
+            }
+        }
+
+        world
     }
     pub fn tiles(&self) -> TileIterator {
         TileIterator::new(&self.tiles, self.width)
@@ -113,10 +171,6 @@ fn main() {
 
     let mut rng = StdRng::new().unwrap();
     let mut world = WorldMap::generate(&mut rng, WIDTH, HEIGHT);
-    world.get_tile_mut(Location::new(5, 4)).terrain = Terrain::Wall;
-    world.get_tile_mut(Location::new(6, 4)).terrain = Terrain::Wall;
-    world.get_tile_mut(Location::new(7, 4)).terrain = Terrain::Wall;
-    world.get_tile_mut(Location::new(8, 4)).terrain = Terrain::Wall;
 
     let mut location = Location {x: 0, y: 0};
     while !console.window_closed() {
