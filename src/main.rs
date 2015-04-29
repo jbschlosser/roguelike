@@ -1,3 +1,5 @@
+#![feature(box_syntax)]
+
 extern crate astar;
 extern crate rand;
 extern crate tcod;
@@ -116,12 +118,21 @@ struct Room {
     x: i32,
     y: i32,
     width: i32,
-    height: i32
+    height: i32,
+    locs: Vec<Location>
 }
 
 impl Room {
     pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
-        Room {x: x, y: y, width: width, height: height}
+        assert!(x >= 0 && y >= 0 && width > 0 && height > 0);
+        let mut locs: Vec<Location> = Vec::with_capacity((width * height) as usize);
+        for i in x..x+width {
+            for j in y..y+height {
+                locs.push(Location::new(i, j));
+            }
+        }
+
+        Room {x: x, y: y, width: width, height: height, locs: locs}
     }
     pub fn overlaps(&self, other: &Room) -> bool {
         let (xmin1, xmax1, xmin2, xmax2) = (self.x, self.x + self.width,
@@ -129,6 +140,14 @@ impl Room {
         let (ymin1, ymax1, ymin2, ymax2) = (self.y, self.y + self.height,
             other.y, other.y + other.height);
         (xmax1 >= xmin2) && (xmax2 >= xmin1) && (ymax1 >= ymin2) && (ymax2 >= ymin1)
+    }
+    pub fn get_walls<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
+        Box::new(self.locs.iter().filter(move |loc| loc.x == self.x || loc.y == self.y ||
+            loc.x == self.x + self.width - 1 || loc.y == self.y + self.height - 1))
+    }
+    pub fn get_floors<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
+        Box::new(self.locs.iter().filter(move |loc| loc.x > self.x && loc.y > self.y &&
+            loc.x < self.x + self.width - 1 && loc.y < self.y + self.height - 1))
     }
 }
 
@@ -171,39 +190,15 @@ impl WorldMap {
         let mut floor_locs = Vec::new();
         let mut wall_locs = Vec::new();
         for room in rooms.iter() {
-            // Horizontal walls.
-            for x in room.x+1..room.x+room.width-1 {
-                let wall1 = Location::new(x, room.y);
-                let wall2 = Location::new(x, room.y+room.height-1);
-                world.get_tile_mut(wall1).terrain = Terrain::Wall;
-                world.get_tile_mut(wall2).terrain = Terrain::Wall;
-                wall_locs.push(wall1);
-                wall_locs.push(wall2);
+            for wall in room.get_walls() {
+                println!("wall: {:?}", wall);
+                world.get_tile_mut(*wall).terrain = Terrain::Wall;
+                wall_locs.push(wall);
             }
-            // Vertical walls.
-            for y in room.y+1..room.y+room.height-1 {
-                let wall1 = Location::new(room.x, y);
-                let wall2 = Location::new(room.x+room.width-1, y);
-                world.get_tile_mut(wall1).terrain = Terrain::Wall;
-                world.get_tile_mut(wall2).terrain = Terrain::Wall;
-                wall_locs.push(wall1);
-                wall_locs.push(wall2);
-            }
-            // Corners.
-            world.get_tile_mut(Location::new(room.x, room.y)).terrain = Terrain::Wall;
-            world.get_tile_mut(Location::new(room.x, room.y+room.height-1)).terrain =
-                Terrain::Wall;
-            world.get_tile_mut(Location::new(room.x+room.width-1, room.y)).terrain =
-                Terrain::Wall;
-            world.get_tile_mut(Location::new(room.x+room.width-1,
-                room.y+room.height-1)).terrain = Terrain::Wall;
-            // Floors.
-            for x in room.x+1..room.x+room.width-1 {
-                for y in room.y+1..room.y+room.height-1 {
-                    let loc = Location::new(x, y);
-                    world.get_tile_mut(loc).terrain = Terrain::Floor;
-                    floor_locs.push(loc);
-                }
+
+            for floor in room.get_floors() {
+                world.get_tile_mut(*floor).terrain = Terrain::Floor;
+                floor_locs.push(*floor);
             }
         }
 
@@ -212,10 +207,10 @@ impl WorldMap {
             // Dig out walls and find path.
             let wall1 = wall_locs[rng.gen_range::<usize>(0, wall_locs.len() - 1)];
             let wall2 = wall_locs[rng.gen_range::<usize>(0, wall_locs.len() - 1)];
-            world.get_tile_mut(wall1).terrain = Terrain::Nothing;
-            world.get_tile_mut(wall2).terrain = Terrain::Nothing;
+            world.get_tile_mut(*wall1).terrain = Terrain::Nothing;
+            world.get_tile_mut(*wall2).terrain = Terrain::Nothing;
             println!("Searching for path from {:?} to {:?}...", wall1, wall2);
-            match astar::astar(ConnectRooms::new(&world, wall1, wall2)) {
+            match astar::astar(ConnectRooms::new(&world, *wall1, *wall2)) {
                 Some(path) => {
                     for loc in path.iter() {
                         world.get_tile_mut(*loc).terrain = Terrain::Debug;
