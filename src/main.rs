@@ -33,13 +33,10 @@ struct NeighborIterator {
 
 impl NeighborIterator {
     pub fn new(world: &WorldMap, loc: Location) -> Self {
-        let mut adjacent = Vec::new();
-        for adj in world.get_adjacent(loc) {
-            match world.get_tile(adj).terrain {
-                Terrain::Nothing => { adjacent.push(adj); },
-                _ => {}
-            }
-        }
+        let adjacent = world.get_adjacent(loc).iter()
+            .map(|x| *x)
+            .filter(|loc| world.get_tile(*loc).terrain == Terrain::Nothing)
+            .collect();
 
         NeighborIterator { adjacent: adjacent, current: 0 }
     }
@@ -85,7 +82,7 @@ impl<'a> astar::SearchProblem<Location, i32, NeighborIterator> for ConnectRooms<
     }
 }
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 enum Terrain {
     Debug,
     Nothing,
@@ -140,10 +137,10 @@ impl WorldMap {
         assert!(width > 0);
         assert!(height > 0);
 
-        let mut tiles = Vec::with_capacity((width * height) as usize);
-        for _ in 0..width*height {
-            tiles.push(Tile::new(Terrain::Nothing));
-        }
+        let tiles: Vec<_> = std::iter::repeat(Terrain::Nothing)
+            .take((width * height) as usize)
+            .map(|terrain| Tile::new(terrain))
+            .collect();
 
         let mut world = WorldMap { width: width, height: height, tiles: tiles };
 
@@ -299,9 +296,8 @@ fn main() {
 
     let mut location = starting_loc;
     while !console.window_closed() {
-        console.clear();
-
         // Draw world.
+        console.clear();
         for (tile, location) in world.tiles() {
             match tile.terrain {
                 Terrain::Floor => {
@@ -321,8 +317,9 @@ fn main() {
 
         // Draw character.
         console.put_char(location.x, location.y, '@', BackgroundFlag::Set);
-
         console.flush();
+
+        // Check for keypress.
         let keypress = console.wait_for_keypress(true);
         if keypress.pressed {
             let new_loc = match keypress.key {
