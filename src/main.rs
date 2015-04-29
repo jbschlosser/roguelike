@@ -1,3 +1,4 @@
+extern crate astar;
 extern crate rand;
 extern crate tcod;
 
@@ -7,7 +8,7 @@ use tcod::RootInitializer;
 use tcod::input::Key::Special;
 use tcod::input::KeyCode::{Up, Down, Left, Right, Escape};
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 struct Location {
     pub x: i32,
     pub y: i32
@@ -17,10 +18,76 @@ impl Location {
     pub fn new(x: i32, y: i32) -> Self {
         Location {x: x, y: y}
     }
+    pub fn manhattan(&self, other: &Location) -> i32 {
+        let total_x = if self.x > other.x { self.x - other.x } else { other.x - self.x };
+        let total_y = if self.y > other.y { self.y - other.y } else { other.y - self.y };
+
+        total_x + total_y
+    }
+}
+
+struct NeighborIterator {
+    adjacent: Vec<Location>,
+    current: usize
+}
+
+impl NeighborIterator {
+    pub fn new(world: &WorldMap, loc: Location) -> Self {
+        let mut adjacent = Vec::new();
+        for adj in world.get_adjacent(loc) {
+            match world.get_tile(adj).terrain {
+                Terrain::Nothing => { adjacent.push(adj); },
+                _ => {}
+            }
+        }
+
+        NeighborIterator { adjacent: adjacent, current: 0 }
+    }
+}
+
+impl Iterator for NeighborIterator {
+    type Item = (Location, i32);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current < self.adjacent.len() {
+            self.current += 1;
+            Some((self.adjacent[self.current - 1], 1))
+        } else {
+            None
+        }
+    }
+}
+
+struct ConnectRooms<'a> {
+    world: &'a WorldMap,
+    start: Location,
+    end: Location
+}
+
+impl<'a> ConnectRooms<'a> {
+    pub fn new(world: &'a WorldMap, start: Location, end: Location) -> Self {
+        ConnectRooms { world: world, start: start, end: end }
+    }
+}
+
+impl<'a> astar::SearchProblem<Location, i32, NeighborIterator> for ConnectRooms<'a> {
+    fn start(&self) -> Location {
+        self.start
+    }
+    fn is_end(&self, loc: &Location) -> bool {
+        *loc == self.end
+    }
+    fn heuristic(&self, loc: &Location) -> i32 {
+        loc.manhattan(&self.end)
+    }
+    fn neighbors(&self, at: &Location) -> NeighborIterator {
+        NeighborIterator::new(&self.world, *at)
+    }
 }
 
 #[derive(Copy, Clone, Debug)]
 enum Terrain {
+    Debug,
     Nothing,
     Floor,
     Wall
@@ -145,10 +212,20 @@ impl WorldMap {
 
         // Draw paths between rooms.
         for _ in 0..1 {
+            // Dig out walls and find path.
             let wall1 = wall_locs[rng.gen_range::<usize>(0, wall_locs.len() - 1)];
             let wall2 = wall_locs[rng.gen_range::<usize>(0, wall_locs.len() - 1)];
-            let path = world.find_path(wall1, wall2);
-            println!("Drawing path from {:?} to {:?}: {:?}", wall1, wall2, path);
+            world.get_tile_mut(wall1).terrain = Terrain::Nothing;
+            world.get_tile_mut(wall2).terrain = Terrain::Nothing;
+            println!("Searching for path from {:?} to {:?}...", wall1, wall2);
+            match astar::astar(ConnectRooms::new(&world, wall1, wall2)) {
+                Some(path) => {
+                    for loc in path.iter() {
+                        world.get_tile_mut(*loc).terrain = Terrain::Debug;
+                    }
+                },
+                None => { println!("Failed to find path"); }
+            }
         }
 
         // Pick a random floor tile to start on.
@@ -177,27 +254,6 @@ impl WorldMap {
         if loc.y < self.height - 1 { adjacent.push(Location::new(loc.x, loc.y + 1)); }
 
         return adjacent;
-    }
-    fn find_path(&self, start: Location, end: Location) -> Option<Vec<Location>> {
-        // TODO: Implement priority-queue based A* algorithm.
-        /*let mut potential = Vec::new();
-        potential.push(vec![start]);
-        while potential.len() > 0 && start != end {
-            let next_try = potential.pop();
-            let adjacent = self.get_adjacent(start);
-            for loc in adjacent {
-                match self.get_tile(loc).terrain {
-                    Terrain::Floor => {
-                        println!("Adjacent: {:?}", loc);
-                    },
-                    _ => {}
-                }
-            }
-        }
-
-        return potential.pop();*/
-
-        return None;
     }
 }
 
@@ -256,6 +312,9 @@ fn main() {
                 },
                 Terrain::Nothing => {
                     console.put_char(location.x, location.y, ' ', BackgroundFlag::Set);
+                },
+                Terrain::Debug => {
+                    console.put_char(location.x, location.y, '^', BackgroundFlag::Set);
                 }
             }
         }
@@ -284,6 +343,7 @@ fn main() {
             };
             match world.get_tile(new_loc).terrain {
                 Terrain::Floor => location = new_loc,
+                Terrain::Debug => location = new_loc,
                 Terrain::Wall => {},
                 Terrain::Nothing => {}
             }

@@ -15,3 +15,6 @@ rand = "*"
 
 [dependencies.tcod]
 git = "https://github.com/tomassedovic/tcod-rs.git"
+
+[dependencies.astar]
+git = "https://github.com/TyOverby/astar.git"
