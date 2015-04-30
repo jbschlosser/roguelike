@@ -10,6 +10,20 @@ use tcod::RootInitializer;
 use tcod::input::Key::Special;
 use tcod::input::KeyCode::{Up, Down, Left, Right, Escape};
 
+// Trait to extend iterators to provide a random function.
+trait IterRandomExt<T> {
+    fn random<R: Rng>(&mut self, rng: &mut R) -> T;
+}
+
+impl<I> IterRandomExt<I::Item> for I where I: Iterator, I::Item: Clone {
+    fn random<R: Rng>(&mut self, rng: &mut R) -> I::Item {
+        let elements: Vec<_> = self.collect();
+        assert!(elements.len() > 0);
+        let random = rng.gen_range::<usize>(0, elements.len() - 1);
+        elements[random].clone()
+    }
+}
+
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 struct Location {
     pub x: i32,
@@ -114,6 +128,7 @@ struct WorldMap {
     tiles: Vec<Tile>
 }
 
+#[derive(Debug)]
 struct Room {
     x: i32,
     y: i32,
@@ -141,11 +156,11 @@ impl Room {
             other.y, other.y + other.height);
         (xmax1 >= xmin2) && (xmax2 >= xmin1) && (ymax1 >= ymin2) && (ymax2 >= ymin1)
     }
-    pub fn get_walls<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
+    pub fn walls<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
         Box::new(self.locs.iter().filter(move |loc| loc.x == self.x || loc.y == self.y ||
             loc.x == self.x + self.width - 1 || loc.y == self.y + self.height - 1))
     }
-    pub fn get_floors<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
+    pub fn floors<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
         Box::new(self.locs.iter().filter(move |loc| loc.x > self.x && loc.y > self.y &&
             loc.x < self.x + self.width - 1 && loc.y < self.y + self.height - 1))
     }
@@ -187,26 +202,23 @@ impl WorldMap {
         }
 
         // Draw rooms.
-        let mut floor_locs = Vec::new();
-        let mut wall_locs = Vec::new();
         for room in rooms.iter() {
-            for wall in room.get_walls() {
-                println!("wall: {:?}", wall);
+            for wall in room.walls() {
                 world.get_tile_mut(*wall).terrain = Terrain::Wall;
-                wall_locs.push(wall);
             }
 
-            for floor in room.get_floors() {
+            for floor in room.floors() {
                 world.get_tile_mut(*floor).terrain = Terrain::Floor;
-                floor_locs.push(*floor);
             }
         }
 
         // Draw paths between rooms.
         for _ in 0..1 {
+            // Pick two random walls from two random rooms.
+            let wall1 = rooms.iter().random(rng).walls().random(rng);
+            let wall2 = rooms.iter().random(rng).walls().random(rng);
+
             // Dig out walls and find path.
-            let wall1 = wall_locs[rng.gen_range::<usize>(0, wall_locs.len() - 1)];
-            let wall2 = wall_locs[rng.gen_range::<usize>(0, wall_locs.len() - 1)];
             world.get_tile_mut(*wall1).terrain = Terrain::Nothing;
             world.get_tile_mut(*wall2).terrain = Terrain::Nothing;
             println!("Searching for path from {:?} to {:?}...", wall1, wall2);
@@ -220,8 +232,8 @@ impl WorldMap {
             }
         }
 
-        // Pick a random floor tile to start on.
-        let starting_loc = floor_locs[rng.gen_range::<usize>(0, floor_locs.len() - 1)];
+        // Pick a random floor in a random room to start on.
+        let starting_loc = *rooms.iter().random(rng).floors().random(rng);
 
         (world, starting_loc)
     }
