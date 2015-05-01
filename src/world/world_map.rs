@@ -104,7 +104,7 @@ impl WorldMap {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Hash)]
 pub struct Location {
     pub x: i32,
     pub y: i32
@@ -119,6 +119,13 @@ impl Location {
         let total_y = if self.y > other.y { self.y - other.y } else { other.y - self.y };
 
         total_x + total_y
+    }
+}
+
+impl ::std::fmt::Debug for Location {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter) ->
+        Result<(), ::std::fmt::Error> {
+        f.write_fmt(format_args!("({}, {})", self.x, self.y))
     }
 }
 
@@ -176,6 +183,133 @@ impl<'a> Iterator for TileIterator<'a> {
 }
 
 // GENERATION STUFF.
+// A feature in the world, consisting of some arrangement of terrain.
+// Features consist of relative coordinates; they can be placed at any
+// arbitrary location.
+struct Feature {
+    components: Vec<(Location, Terrain)>
+}
+
+impl Feature {
+    pub fn new(components: Vec<(Location, Terrain)>) -> Self {
+        Feature { components: components }
+    }
+    pub fn width(&self) -> i32 {
+        if self.components.len() == 0 {
+            return 0;
+        }
+
+        self.components.iter().map(|c| c.0.x).max().unwrap() -
+            self.components.iter().map(|c| c.0.x).min().unwrap() + 1
+    }
+    pub fn height(&self) -> i32 {
+        if self.components.len() == 0 {
+            return 0;
+        }
+
+        self.components.iter().map(|c| c.0.y).max().unwrap() -
+            self.components.iter().map(|c| c.0.y).min().unwrap() + 1
+    }
+    pub fn iter(&self) -> ::std::slice::Iter<(Location, Terrain)> {
+        self.components.iter()
+    }
+}
+
+enum HorizontalAlignment {
+    Left,
+    Center,
+    Right
+}
+
+enum VerticalAlignment {
+    Top,
+    Center,
+    Bottom
+}
+
+// Build features! Take the raw feature shape and translate it
+// according to the given alignment and absolute location.
+struct FeatureBuilder {
+    components: Vec<(Location, Terrain)>,
+    location: Location,
+    horiz_align: HorizontalAlignment,
+    vert_align: VerticalAlignment
+}
+
+impl FeatureBuilder {
+    pub fn new(components: Vec<(Location, Terrain)>) -> Self {
+        assert!(components.len() > 0);
+        FeatureBuilder {
+            components: components,
+            location: Location::new(0, 0),
+            horiz_align: HorizontalAlignment::Center,
+            vert_align: VerticalAlignment::Center
+        }
+    }
+    pub fn location(mut self, loc: Location) -> Self {
+        self.location = loc;
+        self
+    }
+    pub fn horiz_align(mut self, align: HorizontalAlignment) -> Self {
+        self.horiz_align = align;
+        self
+    }
+    pub fn vert_align(mut self, align: VerticalAlignment) -> Self {
+        self.vert_align = align;
+        self
+    }
+    pub fn build(&self) -> Feature {
+        let horiz = match self.horiz_align {
+            HorizontalAlignment::Left => {
+                self.location.x - Self::calc_min_x(&self.components)
+            },
+            HorizontalAlignment::Center => {
+                self.location.x - (Self::calc_min_x(&self.components) +
+                    (Self::calc_max_x(&self.components) -
+                    Self::calc_min_x(&self.components) + 1) / 2)
+            },
+            HorizontalAlignment::Right => {
+                self.location.x - Self::calc_max_x(&self.components)
+            }
+        };
+        let vert = match self.vert_align {
+            VerticalAlignment::Top => {
+                self.location.y - Self::calc_min_y(&self.components)
+            },
+            VerticalAlignment::Center => {
+                self.location.y - (Self::calc_min_y(&self.components) +
+                    (Self::calc_max_y(&self.components) -
+                    Self::calc_min_y(&self.components) + 1) / 2)
+            },
+            VerticalAlignment::Bottom => {
+                self.location.y - Self::calc_max_y(&self.components)
+            }
+        };
+        println!("adjustment: ({}, {})", horiz, vert);
+
+        let comps = self.components.iter()
+            .map(|c| {
+                (Location::new(c.0.x + horiz, c.0.y + vert), c.1)
+            })
+            .collect();
+
+        Feature {components: comps}
+    }
+
+    fn calc_min_x(components: &[(Location, Terrain)]) -> i32 {
+        components.iter().map(|c| c.0.x).min().unwrap()
+    }
+    fn calc_max_x(components: &[(Location, Terrain)]) -> i32 {
+        components.iter().map(|c| c.0.x).max().unwrap()
+    }
+    fn calc_min_y(components: &[(Location, Terrain)]) -> i32 {
+        components.iter().map(|c| c.0.y).min().unwrap()
+    }
+    fn calc_max_y(components: &[(Location, Terrain)]) -> i32 {
+        components.iter().map(|c| c.0.y).max().unwrap()
+    }
+}
+
 // A room in the world.
 #[derive(Debug)]
 struct Room {
@@ -285,4 +419,113 @@ impl<'a> astar::SearchProblem<Location, i32, NeighborIterator> for ConnectRooms<
     fn neighbors(&self, at: &Location) -> NeighborIterator {
         NeighborIterator::new(&self.world, *at)
     }
+}
+
+#[test]
+fn test_feature_size() {
+    let feature = Feature::new(vec![
+        (Location::new(0, 0), Terrain::Wall),
+        (Location::new(1, 0), Terrain::Wall),
+        (Location::new(1, 1), Terrain::Wall)]);
+    assert_eq!(feature.width(), 2);
+    assert_eq!(feature.height(), 2);
+}
+
+#[test]
+fn test_build_feature() {
+    // Set up some feature shape:
+    //
+    // ....
+    // .##.
+    // .##.
+    // .#..
+    // ....
+    let comps = vec![
+        (Location::new(1, 1), Terrain::Wall),
+        (Location::new(2, 1), Terrain::Wall),
+        (Location::new(1, 2), Terrain::Wall),
+        (Location::new(2, 2), Terrain::Wall),
+        (Location::new(1, 3), Terrain::Wall)
+    ];
+
+    // Place top left at (2,3).
+    //
+    // .....
+    // .....
+    // .....
+    // ..##.
+    // ..##.
+    // ..#..
+    // .....
+    assert_eq!(FeatureBuilder::new(comps.clone())
+        .vert_align(VerticalAlignment::Top)
+        .horiz_align(HorizontalAlignment::Left)
+        .location(Location::new(2, 3))
+        .build().components,
+        vec![
+            (Location::new(2, 3), Terrain::Wall),
+            (Location::new(3, 3), Terrain::Wall),
+            (Location::new(2, 4), Terrain::Wall),
+            (Location::new(3, 4), Terrain::Wall),
+            (Location::new(2, 5), Terrain::Wall)
+        ]);
+
+    // Place bottom right at (5,2).
+    //
+    // ....##.
+    // ....##.
+    // ....#..
+    // .......
+    assert_eq!(FeatureBuilder::new(comps)
+        .vert_align(VerticalAlignment::Bottom)
+        .horiz_align(HorizontalAlignment::Right)
+        .location(Location::new(5, 2))
+        .build().components,
+        vec![
+            (Location::new(4, 0), Terrain::Wall),
+            (Location::new(5, 0), Terrain::Wall),
+            (Location::new(4, 1), Terrain::Wall),
+            (Location::new(5, 1), Terrain::Wall),
+            (Location::new(4, 2), Terrain::Wall)
+        ]);
+
+    // Set up a square feature shape.
+    //
+    // ###
+    // ###
+    // ###
+    let square = vec![
+        (Location::new(0, 0), Terrain::Wall),
+        (Location::new(1, 0), Terrain::Wall),
+        (Location::new(2, 0), Terrain::Wall),
+        (Location::new(0, 1), Terrain::Wall),
+        (Location::new(1, 1), Terrain::Wall),
+        (Location::new(2, 1), Terrain::Wall),
+        (Location::new(0, 2), Terrain::Wall),
+        (Location::new(1, 2), Terrain::Wall),
+        (Location::new(2, 2), Terrain::Wall),
+    ];
+
+    // Place center at (4, 1).
+    //
+    // ...###.
+    // ...###.
+    // ...###.
+    // .......
+    assert_eq!(FeatureBuilder::new(square)
+        .vert_align(VerticalAlignment::Center)
+        .horiz_align(HorizontalAlignment::Center)
+        .location(Location::new(4, 1))
+        .build().components,
+        vec![
+            (Location::new(3, 0), Terrain::Wall),
+            (Location::new(4, 0), Terrain::Wall),
+            (Location::new(5, 0), Terrain::Wall),
+            (Location::new(3, 1), Terrain::Wall),
+            (Location::new(4, 1), Terrain::Wall),
+            (Location::new(5, 1), Terrain::Wall),
+            (Location::new(3, 2), Terrain::Wall),
+            (Location::new(4, 2), Terrain::Wall),
+            (Location::new(5, 2), Terrain::Wall)
+        ]);
 }
