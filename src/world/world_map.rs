@@ -1,6 +1,7 @@
 extern crate astar;
 extern crate rand;
 
+use random::RandomTable;
 use self::rand::{Rng};
 
 pub struct WorldMap {
@@ -21,8 +22,69 @@ impl WorldMap {
 
         let mut world = WorldMap { width: width, height: height, tiles: tiles };
 
+        // Generate random features.
+        let feature_table = RandomTable::new(
+            vec![
+                (FeatureBuilder::room(5, 5), 1),
+                (FeatureBuilder::room(4, 4), 10),
+                (FeatureBuilder::room(3, 3), 2)
+                /*(FeatureBuilder::new(vec![
+                    (Location::new(0, 0), Terrain::Wall),
+                    (Location::new(0, 1), Terrain::Wall)]), 5),
+                (FeatureBuilder::new(vec![
+                    (Location::new(1, 0), Terrain::Wall),
+                    (Location::new(1, 1), Terrain::Wall)]), 5),
+                (FeatureBuilder::new(vec![
+                    (Location::new(1, 1), Terrain::Wall),
+                    (Location::new(0, 0), Terrain::Wall)]), 5)*/
+            ]);
+        let mut features: Vec<Feature> = Vec::new();
+        for _ in 0..100 {
+            let mut feature_builder = feature_table.generate(rng);
+            let feature_x = rng.gen_range::<i32>(0, width);
+            let feature_y = rng.gen_range::<i32>(0, height);
+            let feature = feature_builder
+                .vert_align(VerticalAlignment::Top)
+                .horiz_align(HorizontalAlignment::Left)
+                .location(Location::new(feature_x, feature_y))
+                .build();
+            println!("Generated: {:?}", feature);
+            let mut available = true;
+            for present in features.iter() {
+                if present.overlaps(&feature) {
+                    available = false;
+                    //println!("Collides with other feature!");
+                    break;
+                }
+            }
+            for &(loc, _) in feature.iter() {
+                if loc.x < 0 || loc.y < 0 || loc.x >= width || loc.y >= height {
+                    available = false;
+                    //println!("Collides with map edges!");
+                    break;
+                }
+            }
+            if available {
+                println!("Available!");
+                features.push(feature);
+            } else {
+                //println!("Not available!");
+            }
+        }
+
+        // Draw features.
+        for feature in features.iter() {
+            for wall in feature.walls() {
+                world.get_tile_mut(*wall).terrain = Terrain::Wall;
+            }
+
+            for floor in feature.floors() {
+                world.get_tile_mut(*floor).terrain = Terrain::Floor;
+            }
+        }
+
         // Generate rooms.
-        let mut rooms: Vec<Room> = Vec::new();
+        /*let mut rooms: Vec<Room> = Vec::new();
         for _ in 0..60 {
             let room_width = rng.gen_range::<i32>(3, 15);
             let room_height = rng.gen_range::<i32>(3, 15);
@@ -76,7 +138,8 @@ impl WorldMap {
         }
 
         // Pick a random floor in a random room to start on.
-        let starting_loc = *rooms.iter().random(rng).floors().random(rng);
+        let starting_loc = *rooms.iter().random(rng).floors().random(rng);*/
+        let starting_loc = Location::new(0, 0);
 
         (world, starting_loc)
     }
@@ -186,6 +249,7 @@ impl<'a> Iterator for TileIterator<'a> {
 // A feature in the world, consisting of some arrangement of terrain.
 // Features consist of relative coordinates; they can be placed at any
 // arbitrary location.
+#[derive(Clone, Debug)]
 struct Feature {
     components: Vec<(Location, Terrain)>
 }
@@ -193,6 +257,15 @@ struct Feature {
 impl Feature {
     pub fn new(components: Vec<(Location, Terrain)>) -> Self {
         Feature { components: components }
+    }
+    pub fn overlaps(&self, other: &Feature) -> bool {
+        for a in self.components.iter() {
+            for b in other.components.iter() {
+                if a == b { return true; }
+            }
+        }
+
+        return false;
     }
     pub fn width(&self) -> i32 {
         if self.components.len() == 0 {
@@ -213,14 +286,26 @@ impl Feature {
     pub fn iter(&self) -> ::std::slice::Iter<(Location, Terrain)> {
         self.components.iter()
     }
+    pub fn walls<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
+        Box::new(self.components.iter()
+            .filter(|c| c.1 == Terrain::Wall)
+            .map(|c| &c.0))
+    }
+    pub fn floors<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
+        Box::new(self.components.iter()
+            .filter(|c| c.1 == Terrain::Floor)
+            .map(|c| &c.0))
+    }
 }
 
+#[derive(Clone, Copy, Debug)]
 enum HorizontalAlignment {
     Left,
     Center,
     Right
 }
 
+#[derive(Clone, Copy, Debug)]
 enum VerticalAlignment {
     Top,
     Center,
@@ -229,6 +314,7 @@ enum VerticalAlignment {
 
 // Build features! Take the raw feature shape and translate it
 // according to the given alignment and absolute location.
+#[derive(Clone, Debug)]
 struct FeatureBuilder {
     components: Vec<(Location, Terrain)>,
     location: Location,
@@ -242,9 +328,25 @@ impl FeatureBuilder {
         FeatureBuilder {
             components: components,
             location: Location::new(0, 0),
-            horiz_align: HorizontalAlignment::Center,
-            vert_align: VerticalAlignment::Center
+            horiz_align: HorizontalAlignment::Left,
+            vert_align: VerticalAlignment::Top
         }
+    }
+    pub fn room(width: i32, height: i32) -> Self {
+        let mut components = Vec::new();
+        for x in 0..width {
+            for y in 0..height {
+                let terrain =
+                    if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
+                        Terrain::Wall
+                    } else {
+                        Terrain::Floor
+                    };
+                components.push((Location::new(x, y), terrain));
+            }
+        }
+
+        FeatureBuilder::new(components)
     }
     pub fn location(mut self, loc: Location) -> Self {
         self.location = loc;
@@ -285,7 +387,6 @@ impl FeatureBuilder {
                 self.location.y - Self::calc_max_y(&self.components)
             }
         };
-        println!("adjustment: ({}, {})", horiz, vert);
 
         let comps = self.components.iter()
             .map(|c| {
