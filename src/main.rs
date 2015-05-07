@@ -4,7 +4,7 @@ extern crate world;
 
 use rand::StdRng;
 use tcod::{Console, BackgroundFlag, RootInitializer};
-use tcod::input::Key::Special;
+use tcod::input::Key::{Special, Printable};
 use tcod::input::KeyCode::{Up, Down, Left, Right, Escape};
 use world::{WorldMap, Terrain, Location};
 
@@ -61,6 +61,24 @@ fn main() {
                     } else { location }
                 },
                 Special(Right) => Location::new(location.x + 1, location.y),
+                Printable('y') => {
+                    if location.x > 0 && location.y > 0 {
+                        Location::new(location.x - 1, location.y - 1)
+                    } else { location }
+                },
+                Printable('u') => {
+                    if location.y > 0 {
+                        Location::new(location.x + 1, location.y - 1)
+                    } else { location }
+                },
+                Printable('b') => {
+                    if location.x > 0 {
+                        Location::new(location.x - 1, location.y + 1)
+                    } else { location }
+                },
+                Printable('n') => {
+                    Location::new(location.x + 1, location.y + 1)
+                },
                 _ => location
             };
             match world.get_tile(new_loc).terrain {

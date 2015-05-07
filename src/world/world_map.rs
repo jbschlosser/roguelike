@@ -33,7 +33,7 @@ impl WorldMap {
             ];
         let feature_table = RandomTable::new(feature_shapes);
         let mut features: Vec<Feature> = Vec::new();
-        for _ in 0..100 {
+        'outer: while features.len() < 12 {
             let feature_builder = feature_table.generate(rng);
             let feature_x = rng.gen_range::<i32>(0, width);
             let feature_y = rng.gen_range::<i32>(0, height);
@@ -42,31 +42,74 @@ impl WorldMap {
                 .horiz_align(HorizontalAlignment::Left)
                 .location(Location::new(feature_x, feature_y))
                 .build();
-            let mut available = true;
-            for present in features.iter() {
-                if present.overlaps(&feature) {
-                    available = false;
-                    //println!("Collides with other feature!");
-                    break;
-                }
-            }
+
+            // Check if it fits in the world.
             for &(loc, _) in feature.iter() {
                 if loc.x < 0 || loc.y < 0 || loc.x >= width || loc.y >= height {
-                    available = false;
-                    //println!("Collides with map edges!");
-                    break;
+                    println!("Collides with map edges!");
+                    continue 'outer;
                 }
             }
-            if available {
-                println!("Available!");
-                features.push(feature);
-            } else {
-                //println!("Not available!");
+
+            // Check if it collides with anything in the world.
+            for &(loc, _) in feature.iter() {
+                if world.get_tile(loc).terrain != Terrain::Nothing {
+                    println!("Collides with something in the world!");
+                    continue 'outer;
+                }
             }
+
+            // Draw feature.
+            for &(loc, terrain) in feature.iter() {
+                world.get_tile_mut(loc).terrain = terrain;
+            }
+
+            // Draw path from this to another random feature.
+            let mut should_add = true;
+            if features.len() > 0 {
+                println!("Features: {}", features.len());
+                let this_wall = feature.walls().random(rng);
+                let other_feature = features.iter().random(rng);
+                let other_wall = other_feature.walls().random(rng);
+                if world.get_tile(*this_wall).terrain != Terrain::Wall || world.get_tile(*other_wall).terrain != Terrain::Wall {
+                    for &(loc, _) in feature.iter() {
+                        world.get_tile_mut(loc).terrain = Terrain::Nothing;
+                    }
+                    continue 'outer;
+                }
+
+                // Dig out walls and find path.
+                world.get_tile_mut(*this_wall).terrain = Terrain::Nothing;
+                world.get_tile_mut(*other_wall).terrain = Terrain::Nothing;
+                println!("Searching for path from {:?} to {:?}...", this_wall, other_wall);
+                match astar::astar(ConnectRooms::new(&world, *this_wall, *other_wall)) {
+                    Some(path) => {
+                        println!("Path found!");
+                        for loc in path.iter() {
+                            world.get_tile_mut(*loc).terrain = Terrain::Floor;
+                        }
+                        world.get_tile_mut(*this_wall).terrain = Terrain::Debug;
+                        world.get_tile_mut(*other_wall).terrain = Terrain::Debug;
+                    },
+                    None => {
+                        println!("Failed to find path");
+
+                        // Put the other wall back.
+                        world.get_tile_mut(*other_wall).terrain = Terrain::Wall;
+
+                        // Undraw feature.
+                        should_add = false;
+                        for &(loc, _) in feature.iter() {
+                            world.get_tile_mut(loc).terrain = Terrain::Nothing;
+                        }
+                    }
+                }
+            }
+            if should_add { features.push(feature); }
         }
 
         // Draw features.
-        for feature in features.iter() {
+        /*for feature in features.iter() {
             for wall in feature.walls() {
                 world.get_tile_mut(*wall).terrain = Terrain::Wall;
             }
@@ -74,10 +117,10 @@ impl WorldMap {
             for floor in feature.floors() {
                 world.get_tile_mut(*floor).terrain = Terrain::Floor;
             }
-        }
+        }*/
 
         // Draw paths between rooms.
-        for _ in 0..1 {
+        /*for _ in 0..20 {
             // Pick two random walls from two random rooms.
             let wall1 = features.iter().random(rng).walls().random(rng);
             let wall2 = features.iter().random(rng).walls().random(rng);
@@ -92,12 +135,26 @@ impl WorldMap {
                         world.get_tile_mut(*loc).terrain = Terrain::Debug;
                     }
                 },
-                None => { println!("Failed to find path"); }
+                None => {
+                    println!("Failed to find path");
+                    world.get_tile_mut(*wall1).terrain = Terrain::Wall;
+                    world.get_tile_mut(*wall2).terrain = Terrain::Wall;
+                }
             }
-        }
+        }*/
 
         // Pick a random floor in a random room to start on.
         let starting_loc = *features.iter().random(rng).floors().random(rng);
+        let tiles2: Vec<_> = ::std::iter::repeat(Terrain::Nothing)
+            .take((width * height) as usize)
+            .map(|terrain| Tile::new(terrain))
+            .collect();
+        let mut world2 = WorldMap {width: width, height: height, tiles: tiles2};
+        for i in width-10..width-5 {
+            for j in 0..height {
+                world2.get_tile_mut(Location::new(i, j)).terrain = Terrain::Debug;
+            }
+        }
 
         (world, starting_loc)
     }
@@ -378,7 +435,7 @@ impl<I> IterRandomExt<I::Item> for I where I: Iterator, I::Item: Clone {
     fn random<R: Rng>(&mut self, rng: &mut R) -> I::Item {
         let elements: Vec<_> = self.collect();
         assert!(elements.len() > 0);
-        let random = rng.gen_range::<usize>(0, elements.len() - 1);
+        let random = rng.gen_range::<usize>(0, elements.len());
         elements[random].clone()
     }
 }
