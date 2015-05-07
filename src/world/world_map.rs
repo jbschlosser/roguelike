@@ -23,21 +23,13 @@ impl WorldMap {
         let mut world = WorldMap { width: width, height: height, tiles: tiles };
 
         // Generate random features.
-        let feature_table = RandomTable::new(
-            vec![
-                (FeatureBuilder::room(5, 5), 1),
-                (FeatureBuilder::room(4, 4), 10),
-                (FeatureBuilder::room(3, 3), 2)
-                /*(FeatureBuilder::new(vec![
-                    (Location::new(0, 0), Terrain::Wall),
-                    (Location::new(0, 1), Terrain::Wall)]), 5),
-                (FeatureBuilder::new(vec![
-                    (Location::new(1, 0), Terrain::Wall),
-                    (Location::new(1, 1), Terrain::Wall)]), 5),
-                (FeatureBuilder::new(vec![
-                    (Location::new(1, 1), Terrain::Wall),
-                    (Location::new(0, 0), Terrain::Wall)]), 5)*/
-            ]);
+        let mut feature_shapes = Vec::new();
+        for i in 3..15 {
+            for j in 3..15 {
+                feature_shapes.push((FeatureBuilder::room(i, j), 1));
+            }
+        }
+        let feature_table = RandomTable::new(feature_shapes);
         let mut features: Vec<Feature> = Vec::new();
         for _ in 0..100 {
             let mut feature_builder = feature_table.generate(rng);
@@ -80,6 +72,26 @@ impl WorldMap {
 
             for floor in feature.floors() {
                 world.get_tile_mut(*floor).terrain = Terrain::Floor;
+            }
+        }
+
+        // Draw paths between rooms.
+        for _ in 0..1 {
+            // Pick two random walls from two random rooms.
+            let wall1 = features.iter().random(rng).walls().random(rng);
+            let wall2 = features.iter().random(rng).walls().random(rng);
+
+            // Dig out walls and find path.
+            world.get_tile_mut(*wall1).terrain = Terrain::Nothing;
+            world.get_tile_mut(*wall2).terrain = Terrain::Nothing;
+            println!("Searching for path from {:?} to {:?}...", wall1, wall2);
+            match astar::astar(ConnectRooms::new(&world, *wall1, *wall2)) {
+                Some(path) => {
+                    for loc in path.iter() {
+                        world.get_tile_mut(*loc).terrain = Terrain::Debug;
+                    }
+                },
+                None => { println!("Failed to find path"); }
             }
         }
 
