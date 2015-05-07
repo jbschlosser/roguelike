@@ -23,16 +23,18 @@ impl WorldMap {
         let mut world = WorldMap { width: width, height: height, tiles: tiles };
 
         // Generate random features.
-        let mut feature_shapes = Vec::new();
-        for i in 3..15 {
-            for j in 3..15 {
-                feature_shapes.push((FeatureBuilder::room(i, j), 1));
-            }
-        }
+        let feature_shapes: Vec<(Box<Fn(&mut R) -> FeatureBuilder>, u32)> =
+            vec![
+                (Box::new(|rng: &mut R| {
+                    let i = rng.gen_range::<i32>(3, 15);
+                    let j = rng.gen_range::<i32>(3, 15);
+                    FeatureBuilder::room(i, j)
+                }), 1)
+            ];
         let feature_table = RandomTable::new(feature_shapes);
         let mut features: Vec<Feature> = Vec::new();
         for _ in 0..100 {
-            let mut feature_builder = feature_table.generate(rng);
+            let feature_builder = feature_table.generate(rng);
             let feature_x = rng.gen_range::<i32>(0, width);
             let feature_y = rng.gen_range::<i32>(0, height);
             let feature = feature_builder
@@ -40,7 +42,6 @@ impl WorldMap {
                 .horiz_align(HorizontalAlignment::Left)
                 .location(Location::new(feature_x, feature_y))
                 .build();
-            println!("Generated: {:?}", feature);
             let mut available = true;
             for present in features.iter() {
                 if present.overlaps(&feature) {
@@ -95,63 +96,8 @@ impl WorldMap {
             }
         }
 
-        // Generate rooms.
-        /*let mut rooms: Vec<Room> = Vec::new();
-        for _ in 0..60 {
-            let room_width = rng.gen_range::<i32>(3, 15);
-            let room_height = rng.gen_range::<i32>(3, 15);
-            let room_x = rng.gen_range::<i32>(0, width - room_width);
-            let room_y = rng.gen_range::<i32>(0, height - room_height);
-            let room = Room::new(room_x, room_y, room_width, room_height);
-            let mut available = true;
-            for chosen in rooms.iter() {
-                if chosen.overlaps(&room) {
-                    available = false;
-                    break;
-                }
-            }
-            if available {
-                //println!("{}x{} @ {}x{}", room_width, room_height, room_x, room_y);
-                rooms.push(room);
-            } else {
-                //println!("Couldn't fit it");
-            }
-        }
-
-        // Draw rooms.
-        for room in rooms.iter() {
-            for wall in room.walls() {
-                world.get_tile_mut(*wall).terrain = Terrain::Wall;
-            }
-
-            for floor in room.floors() {
-                world.get_tile_mut(*floor).terrain = Terrain::Floor;
-            }
-        }
-
-        // Draw paths between rooms.
-        for _ in 0..1 {
-            // Pick two random walls from two random rooms.
-            let wall1 = rooms.iter().random(rng).walls().random(rng);
-            let wall2 = rooms.iter().random(rng).walls().random(rng);
-
-            // Dig out walls and find path.
-            world.get_tile_mut(*wall1).terrain = Terrain::Nothing;
-            world.get_tile_mut(*wall2).terrain = Terrain::Nothing;
-            println!("Searching for path from {:?} to {:?}...", wall1, wall2);
-            match astar::astar(ConnectRooms::new(&world, *wall1, *wall2)) {
-                Some(path) => {
-                    for loc in path.iter() {
-                        world.get_tile_mut(*loc).terrain = Terrain::Debug;
-                    }
-                },
-                None => { println!("Failed to find path"); }
-            }
-        }
-
         // Pick a random floor in a random room to start on.
-        let starting_loc = *rooms.iter().random(rng).floors().random(rng);*/
-        let starting_loc = Location::new(0, 0);
+        let starting_loc = *features.iter().random(rng).floors().random(rng);
 
         (world, starting_loc)
     }
@@ -279,7 +225,7 @@ impl Feature {
 
         return false;
     }
-    pub fn width(&self) -> i32 {
+    /*pub fn width(&self) -> i32 {
         if self.components.len() == 0 {
             return 0;
         }
@@ -294,7 +240,7 @@ impl Feature {
 
         self.components.iter().map(|c| c.0.y).max().unwrap() -
             self.components.iter().map(|c| c.0.y).min().unwrap() + 1
-    }
+    }*/
     pub fn iter(&self) -> ::std::slice::Iter<(Location, Terrain)> {
         self.components.iter()
     }
@@ -406,7 +352,7 @@ impl FeatureBuilder {
             })
             .collect();
 
-        Feature {components: comps}
+        Feature::new(comps)
     }
 
     fn calc_min_x(components: &[(Location, Terrain)]) -> i32 {
@@ -420,45 +366,6 @@ impl FeatureBuilder {
     }
     fn calc_max_y(components: &[(Location, Terrain)]) -> i32 {
         components.iter().map(|c| c.0.y).max().unwrap()
-    }
-}
-
-// A room in the world.
-#[derive(Debug)]
-struct Room {
-    x: i32,
-    y: i32,
-    width: i32,
-    height: i32,
-    locs: Vec<Location>
-}
-
-impl Room {
-    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
-        assert!(x >= 0 && y >= 0 && width > 0 && height > 0);
-        let mut locs: Vec<Location> = Vec::with_capacity((width * height) as usize);
-        for i in x..x+width {
-            for j in y..y+height {
-                locs.push(Location::new(i, j));
-            }
-        }
-
-        Room {x: x, y: y, width: width, height: height, locs: locs}
-    }
-    pub fn overlaps(&self, other: &Room) -> bool {
-        let (xmin1, xmax1, xmin2, xmax2) = (self.x, self.x + self.width,
-            other.x, other.x + other.width);
-        let (ymin1, ymax1, ymin2, ymax2) = (self.y, self.y + self.height,
-            other.y, other.y + other.height);
-        (xmax1 >= xmin2) && (xmax2 >= xmin1) && (ymax1 >= ymin2) && (ymax2 >= ymin1)
-    }
-    pub fn walls<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
-        Box::new(self.locs.iter().filter(move |loc| loc.x == self.x || loc.y == self.y ||
-            loc.x == self.x + self.width - 1 || loc.y == self.y + self.height - 1))
-    }
-    pub fn floors<'a>(&'a self) -> Box<Iterator<Item=&'a Location> + 'a> {
-        Box::new(self.locs.iter().filter(move |loc| loc.x > self.x && loc.y > self.y &&
-            loc.x < self.x + self.width - 1 && loc.y < self.y + self.height - 1))
     }
 }
 
