@@ -237,7 +237,7 @@ trait IterRandomExt<T> {
     fn random<R: Rng>(&mut self, rng: &mut R) -> T;
 }
 
-impl<I> IterRandomExt<I::Item> for I where I: Iterator, I::Item: Clone {
+impl<I: Iterator> IterRandomExt<I::Item> for I where I::Item: Clone {
     fn random<R: Rng>(&mut self, rng: &mut R) -> I::Item {
         let elements: Vec<_> = self.collect();
         assert!(elements.len() > 0);
