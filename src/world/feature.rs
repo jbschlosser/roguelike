@@ -123,6 +123,25 @@ impl FeatureBuilder {
 
         FeatureBuilder::new(shape)
     }
+    pub fn hallway(length: i32, is_horiz: bool) -> Self {
+        assert!(length > 0);
+        let mut shape = Vec::new();
+        if is_horiz {
+            for i in 0..length {
+                shape.push(Tile::new(Location::new(i, -1), Terrain::Wall));
+                shape.push(Tile::new(Location::new(i, 0), Terrain::Floor));
+                shape.push(Tile::new(Location::new(i, 1), Terrain::Wall));
+            }
+        } else {
+            for i in 0..length {
+                shape.push(Tile::new(Location::new(-1, i), Terrain::Wall));
+                shape.push(Tile::new(Location::new(0, i), Terrain::Floor));
+                shape.push(Tile::new(Location::new(1, i), Terrain::Wall));
+            }
+        }
+
+        FeatureBuilder::new(shape)
+    }
     pub fn location(mut self, loc: Location) -> Self {
         self.location = loc;
         self

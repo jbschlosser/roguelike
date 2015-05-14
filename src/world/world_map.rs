@@ -44,6 +44,11 @@ impl WorldMap {
                 (Box::new(|rng: &mut R| {
                     let r = rng.gen_range::<i32>(3, 15);
                     FeatureBuilder::circle_room(r)
+                }), 1),
+                (Box::new(|rng: &mut R| {
+                    let l = rng.gen_range::<i32>(3, 15);
+                    let is_horiz = rng.gen::<bool>();
+                    FeatureBuilder::hallway(l, is_horiz)
                 }), 5)
             ];
         let feature_table = RandomTable::new(feature_shapes);
