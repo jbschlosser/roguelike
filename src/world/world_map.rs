@@ -45,15 +45,31 @@ impl WorldMap {
                     let r = rng.gen_range::<i32>(3, 15);
                     FeatureBuilder::circle_room(r)
                 }), 1),
-                (Box::new(|rng: &mut R| {
+                /*(Box::new(|rng: &mut R| {
                     let l = rng.gen_range::<i32>(3, 15);
                     let is_horiz = rng.gen::<bool>();
                     FeatureBuilder::hallway(l, is_horiz)
-                }), 5)
+                }), 5)*/
             ];
         let feature_table = RandomTable::new(feature_shapes);
         let mut features: Vec<Feature> = Vec::new();
-        'outer: while features.len() < 12 {
+
+        // Place first feature somewhere in the middle.
+        // TODO: Check that the first feature fits!
+        let feature_x = rng.gen_range::<i32>(width / 2 - 3, width / 2 + 3);
+        let feature_y = rng.gen_range::<i32>(height / 2 - 3, height / 2 + 3);
+        let first_feature = feature_table.generate(rng)
+            .vert_align(VerticalAlignment::Center)
+            .horiz_align(HorizontalAlignment::Center)
+            .location(Location::new(feature_x, feature_y))
+            .build();
+
+        // Draw first feature.
+        for tile in first_feature.iter() {
+            world.get_tile_mut(tile.loc).terrain = tile.terrain;
+        }
+
+        /*'outer: while features.len() < 12 {
             let feature_builder = feature_table.generate(rng);
             let feature_x = rng.gen_range::<i32>(0, width);
             let feature_y = rng.gen_range::<i32>(0, height);
@@ -126,7 +142,7 @@ impl WorldMap {
                 }
             }
             if should_add { features.push(feature); }
-        }
+        }*/
 
         // Draw features.
         /*for feature in features.iter() {
@@ -164,7 +180,8 @@ impl WorldMap {
         }*/
 
         // Pick a random floor in a random room to start on.
-        let starting_loc = *features.iter().random(rng).floors().random(rng);
+        //let starting_loc = *features.iter().random(rng).floors().random(rng);
+        let starting_loc = Location::new(0, 0);
         /*let tiles2: Vec<_> = ::std::iter::repeat(Terrain::Nothing)
             .take((width * height) as usize)
             .map(|terrain| Tile::new(terrain))
@@ -199,6 +216,21 @@ impl WorldMap {
         if loc.y < self.height - 1 { adjacent.push(Location::new(loc.x, loc.y + 1)); }
 
         return adjacent;
+    }
+    fn can_fit(&self, feature: &Feature) -> bool {
+        // Check if it fits in the world.
+        for tile in feature.iter() {
+            if tile.loc.x < 0 || tile.loc.y < 0 ||
+                tile.loc.x >= self.width || tile.loc.y >= self.height {
+                return false;
+            }
+
+            if self.get_tile(tile.loc).terrain != Terrain::Nothing {
+                return false;
+            }
+        }
+
+        true
     }
 }
 
