@@ -3,45 +3,62 @@ extern crate tcod;
 extern crate world;
 
 use rand::StdRng;
-use tcod::{Console, BackgroundFlag, RootInitializer};
+use std::collections::HashSet;
 use tcod::input::Key::{Special, Printable};
 use tcod::input::KeyCode::{Up, Down, Left, Right, Escape};
+use tcod::{Console, BackgroundFlag, RootInitializer};
 use world::{WorldMap, Terrain, Location};
+
+fn explore(loc: Location, radius: i32, explored: &mut HashSet<Location>) {
+    let center = Location::new(0, 0);
+    for i in -radius..radius+1 {
+        for j in -radius..radius+1 {
+            let circle_loc = Location::new(i, j);
+            let dist = circle_loc.euclidean(&center);
+            if dist <= radius {
+                explored.insert(Location::new(loc.x + circle_loc.x,
+                    loc.y + circle_loc.y));
+            }
+        }
+    }
+}
 
 fn main() {
     let width = 150; //80;
     let height = 100; //50;
+    let player_radius = 5;
     let mut console = RootInitializer::new()
         .size(width, height)
         .title("Roguelike")
         .init();
-
     let mut rng = StdRng::new().unwrap();
     let (world, starting_loc) = WorldMap::generate(&mut rng, width, height);
+    let mut explored = HashSet::new();
+    let mut player_loc = starting_loc;
+    explore(player_loc, player_radius, &mut explored);
 
-    let mut location = starting_loc;
     while !console.window_closed() {
         // Draw world.
-        console.clear();
+        //console.clear();
         for tile in world.tiles() {
-            match tile.terrain {
-                Terrain::Floor => {
+            match (tile.terrain, explored.contains(&tile.loc)) {
+                (Terrain::Floor, true) => {
                     console.put_char(tile.loc.x, tile.loc.y, '.', BackgroundFlag::Set);
                 },
-                Terrain::Wall => {
+                (Terrain::Wall, true) => {
                     console.put_char(tile.loc.x, tile.loc.y, '#', BackgroundFlag::Set);
                 },
-                Terrain::Nothing => {
-                    console.put_char(tile.loc.x, tile.loc.y, ' ', BackgroundFlag::Set);
-                },
-                Terrain::Debug => {
+                (Terrain::Debug, true) => {
                     console.put_char(tile.loc.x, tile.loc.y, '^', BackgroundFlag::Set);
+                },
+                _ => {
+                    console.put_char(tile.loc.x, tile.loc.y, ' ', BackgroundFlag::Set);
                 }
             }
         }
 
         // Draw character.
-        console.put_char(location.x, location.y, '@', BackgroundFlag::Set);
+        console.put_char(player_loc.x, player_loc.y, '@', BackgroundFlag::Set);
         console.flush();
 
         // Check for keypress.
@@ -50,40 +67,46 @@ fn main() {
             let new_loc = match keypress.key {
                 Special(Escape) => break,
                 Special(Up) => {
-                    if location.y > 0 {
-                        Location::new(location.x, location.y - 1)
-                    } else { location }
+                    if player_loc.y > 0 {
+                        Location::new(player_loc.x, player_loc.y - 1)
+                    } else { player_loc }
                 },
-                Special(Down) => Location::new(location.x, location.y + 1),
+                Special(Down) => Location::new(player_loc.x, player_loc.y + 1),
                 Special(Left) => {
-                    if location.x > 0 {
-                        Location::new(location.x - 1, location.y)
-                    } else { location }
+                    if player_loc.x > 0 {
+                        Location::new(player_loc.x - 1, player_loc.y)
+                    } else { player_loc }
                 },
-                Special(Right) => Location::new(location.x + 1, location.y),
+                Special(Right) => Location::new(player_loc.x + 1, player_loc.y),
                 Printable('y') => {
-                    if location.x > 0 && location.y > 0 {
-                        Location::new(location.x - 1, location.y - 1)
-                    } else { location }
+                    if player_loc.x > 0 && player_loc.y > 0 {
+                        Location::new(player_loc.x - 1, player_loc.y - 1)
+                    } else { player_loc }
                 },
                 Printable('u') => {
-                    if location.y > 0 {
-                        Location::new(location.x + 1, location.y - 1)
-                    } else { location }
+                    if player_loc.y > 0 {
+                        Location::new(player_loc.x + 1, player_loc.y - 1)
+                    } else { player_loc }
                 },
                 Printable('b') => {
-                    if location.x > 0 {
-                        Location::new(location.x - 1, location.y + 1)
-                    } else { location }
+                    if player_loc.x > 0 {
+                        Location::new(player_loc.x - 1, player_loc.y + 1)
+                    } else { player_loc }
                 },
                 Printable('n') => {
-                    Location::new(location.x + 1, location.y + 1)
+                    Location::new(player_loc.x + 1, player_loc.y + 1)
                 },
-                _ => location
+                _ => player_loc
             };
             match world.get_tile(new_loc).terrain {
-                Terrain::Floor => location = new_loc,
-                Terrain::Debug => location = new_loc,
+                Terrain::Floor => {
+                    player_loc = new_loc;
+                    explore(player_loc, player_radius, &mut explored);
+                },
+                Terrain::Debug => {
+                    player_loc = new_loc;
+                    explore(player_loc, player_radius, &mut explored);
+                },
                 Terrain::Wall => {},
                 Terrain::Nothing => {}
             }

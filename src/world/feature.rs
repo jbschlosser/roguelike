@@ -17,13 +17,7 @@ impl Feature {
         let mut tiles = Vec::new();
         for x in 0..width {
             for y in 0..height {
-                let terrain =
-                    if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
-                        Terrain::Wall
-                    } else {
-                        Terrain::Floor
-                    };
-                tiles.push(Tile::new(Location::new(x, y), terrain));
+                tiles.push(Tile::new(Location::new(x, y), Terrain::Floor));
             }
         }
 
@@ -38,10 +32,8 @@ impl Feature {
             for j in -radius..radius+1 {
                 let loc = Location::new(i, j);
                 let dist = loc.manhattan(&center);
-                if dist < radius {
+                if dist <= radius {
                     tiles.push(Tile::new(loc, Terrain::Floor));
-                } else if dist == radius {
-                    tiles.push(Tile::new(loc, Terrain::Wall));
                 }
             }
         }
@@ -55,10 +47,8 @@ impl Feature {
             for j in -radius..radius+1 {
                 let loc = Location::new(i, j);
                 let dist = loc.euclidean(&center);
-                if dist < radius {
+                if dist <= radius {
                     tiles.push(Tile::new(loc, Terrain::Floor));
-                } else if dist == radius {
-                    tiles.push(Tile::new(loc, Terrain::Wall));
                 }
             }
         }
@@ -70,15 +60,11 @@ impl Feature {
         let mut tiles = Vec::new();
         if is_horiz {
             for i in 0..length {
-                //tiles.push(Tile::new(Location::new(i, -1), Terrain::Wall));
                 tiles.push(Tile::new(Location::new(i, 0), Terrain::Floor));
-                //tiles.push(Tile::new(Location::new(i, 1), Terrain::Wall));
             }
         } else {
             for i in 0..length {
-                //tiles.push(Tile::new(Location::new(-1, i), Terrain::Wall));
                 tiles.push(Tile::new(Location::new(0, i), Terrain::Floor));
-                //tiles.push(Tile::new(Location::new(1, i), Terrain::Wall));
             }
         }
 
