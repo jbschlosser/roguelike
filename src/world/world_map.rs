@@ -3,7 +3,7 @@ extern crate rand;
 
 use random::RandomTable;
 use tile::{Tile, Terrain, Location};
-use feature::{Feature, FeatureBuilder, VerticalAlignment, HorizontalAlignment};
+use feature::{Feature, VerticalAlignment, HorizontalAlignment};
 use self::rand::{Rng};
 
 pub struct WorldMap {
@@ -13,190 +13,162 @@ pub struct WorldMap {
 }
 
 impl WorldMap {
-    pub fn generate<R: Rng>(rng: &mut R, width: i32, height: i32) -> (Self, Location) {
+    pub fn generate<R: Rng>(rng: &mut R, width: i32, height: i32) ->
+        (Self, Location)
+    {
         assert!(width > 0);
         assert!(height > 0);
 
-        let tiles = {
-            let mut tiles_temp = Vec::new();
-            for i in 0..width {
-                for j in 0..height {
-                    tiles_temp.push(Tile::new(Location::new(i, j), Terrain::Nothing));
+        let mut world = {
+            let mut tiles = Vec::new();
+            for j in 0..height {
+                for i in 0..width {
+                    tiles.push(Tile::new(Location::new(i, j),
+                        Terrain::Nothing));
                 }
             }
-            tiles_temp
+
+            WorldMap { width: width, height: height, tiles: tiles }
         };
 
-        let mut world = WorldMap { width: width, height: height, tiles: tiles };
-
-        // Generate random features.
-        let feature_shapes: Vec<(Box<Fn(&mut R) -> FeatureBuilder>, u32)> =
+        // Populate the random feature generator table.
+        let feature_table = RandomTable::new(
             vec![
                 (Box::new(|rng: &mut R| {
                     let i = rng.gen_range::<i32>(3, 15);
                     let j = rng.gen_range::<i32>(3, 15);
-                    FeatureBuilder::room(i, j)
+                    Feature::room(i, j)
                 }), 1),
                 (Box::new(|rng: &mut R| {
                     let r = rng.gen_range::<i32>(3, 15);
-                    FeatureBuilder::diamond_room(r)
+                    Feature::diamond_room(r)
                 }), 1),
                 (Box::new(|rng: &mut R| {
                     let r = rng.gen_range::<i32>(3, 15);
-                    FeatureBuilder::circle_room(r)
-                }), 1),
-                /*(Box::new(|rng: &mut R| {
-                    let l = rng.gen_range::<i32>(3, 15);
-                    let is_horiz = rng.gen::<bool>();
-                    FeatureBuilder::hallway(l, is_horiz)
-                }), 5)*/
-            ];
-        let feature_table = RandomTable::new(feature_shapes);
-        let mut features: Vec<Feature> = Vec::new();
+                    Feature::circle_room(r)
+                }), 1)
+            ]);
 
         // Place first feature somewhere in the middle.
-        // TODO: Check that the first feature fits!
-        let feature_x = rng.gen_range::<i32>(width / 2 - 3, width / 2 + 3);
-        let feature_y = rng.gen_range::<i32>(height / 2 - 3, height / 2 + 3);
-        let first_feature = feature_table.generate(rng)
-            .vert_align(VerticalAlignment::Center)
-            .horiz_align(HorizontalAlignment::Center)
-            .location(Location::new(feature_x, feature_y))
-            .build();
+        // NOTE: Magic do/while syntax.
+        let mut first_feature = feature_table.generate(rng);
+        while {
+            let feature_x = rng.gen_range::<i32>(
+                width / 2 - 7, width / 2 + 7);
+            let feature_y = rng.gen_range::<i32>(
+                height / 2 - 7, height / 2 + 7);
+            let feat_loc = Location::new(feature_x, feature_y);
+            first_feature = first_feature.place(VerticalAlignment::Center,
+                HorizontalAlignment::Center, feat_loc);
+
+            !world.can_fit(&first_feature)
+        } {}
 
         // Draw first feature.
-        for tile in first_feature.iter() {
-            world.get_tile_mut(tile.loc).terrain = tile.terrain;
-        }
+        world.draw_feature(&first_feature);
 
-        /*'outer: while features.len() < 12 {
-            let feature_builder = feature_table.generate(rng);
-            let feature_x = rng.gen_range::<i32>(0, width);
-            let feature_y = rng.gen_range::<i32>(0, height);
-            let feature = feature_builder
-                .vert_align(VerticalAlignment::Top)
-                .horiz_align(HorizontalAlignment::Left)
-                .location(Location::new(feature_x, feature_y))
-                .build();
+        // Try drawing more features each connected by hallways.
+        for _ in 0..300 {
+            // Pick a random wall in the world.
+            let rand_wall = world.tiles()
+                .filter(|t| t.terrain == Terrain::Wall)
+                .random(rng)
+                .clone();
 
-            // Check if it fits in the world.
-            for tile in feature.iter() {
-                if tile.loc.x < 0 || tile.loc.y < 0 || tile.loc.x >= width || tile.loc.y >= height {
-                    println!("Collides with map edges!");
-                    continue 'outer;
+            // Draw a hallway attached to it.
+            world.get_tile_mut(rand_wall.loc).terrain = Terrain::Nothing;
+            let hallway_len = rng.gen_range::<i32>(5, 15);
+            let mut orientations = vec![
+                (VerticalAlignment::Center, HorizontalAlignment::Left),
+                (VerticalAlignment::Center, HorizontalAlignment::Right),
+                (VerticalAlignment::Top, HorizontalAlignment::Center),
+                (VerticalAlignment::Bottom, HorizontalAlignment::Center)
+            ];
+            rng.shuffle(&mut orientations);
+            let mut orientation = None;
+            for &(vert, horiz) in orientations.iter() {
+                let is_horiz = vert == VerticalAlignment::Center;
+                let hallway = Feature::hallway(hallway_len, is_horiz)
+                    .place(vert, horiz, rand_wall.loc);
+                if world.can_fit(&hallway) {
+                    orientation = Some((vert, horiz));
+                    break;
                 }
             }
+            match orientation {
+                Some((vert, horiz)) => {
+                    let is_horiz = vert == VerticalAlignment::Center;
+                    let hallway = Feature::hallway(hallway_len, is_horiz)
+                        .place(vert, horiz, rand_wall.loc);
+                    world.draw_feature(&hallway);
 
-            // Check if it collides with anything in the world.
-            for tile in feature.iter() {
-                if world.get_tile(tile.loc).terrain != Terrain::Nothing {
-                    println!("Collides with something in the world!");
-                    continue 'outer;
-                }
-            }
+                    // Determine how the feature should be placed to connect
+                    // with the hallway.
+                    let feat_orientation =
+                        if vert == VerticalAlignment::Center {
+                            (vert, horiz, Location::new(
+                                if horiz == HorizontalAlignment::Left {
+                                    rand_wall.loc.x + hallway_len - 1
+                                } else {
+                                    rand_wall.loc.x - hallway_len + 1
+                                }, rand_wall.loc.y
+                            ))
+                        } else {
+                            (vert, horiz, Location::new(
+                                rand_wall.loc.x,
+                                if vert == VerticalAlignment::Top {
+                                    rand_wall.loc.y + hallway_len - 1
+                                } else {
+                                    rand_wall.loc.y - hallway_len + 1
+                                }
+                            ))
+                        };
 
-            // Draw feature.
-            for tile in feature.iter() {
-                world.get_tile_mut(tile.loc).terrain = tile.terrain;
-            }
-
-            // Draw path from this to another random feature.
-            let mut should_add = true;
-            if features.len() > 0 {
-                println!("Features: {}", features.len());
-                let this_wall = feature.walls().random(rng);
-                let other_feature = features.iter().random(rng);
-                let other_wall = other_feature.walls().random(rng);
-                if world.get_tile(*this_wall).terrain != Terrain::Wall || world.get_tile(*other_wall).terrain != Terrain::Wall {
-                    for tile in feature.iter() {
-                        world.get_tile_mut(tile.loc).terrain = Terrain::Nothing;
-                    }
-                    continue 'outer;
-                }
-
-                // Dig out walls and find path.
-                world.get_tile_mut(*this_wall).terrain = Terrain::Nothing;
-                world.get_tile_mut(*other_wall).terrain = Terrain::Nothing;
-                println!("Searching for path from {:?} to {:?}...", this_wall, other_wall);
-                match astar::astar(ConnectRooms::new(&world, *this_wall, *other_wall)) {
-                    Some(path) => {
-                        println!("Path found!");
-                        for loc in path.iter() {
-                            world.get_tile_mut(*loc).terrain = Terrain::Floor;
-                        }
-                        world.get_tile_mut(*this_wall).terrain = Terrain::Debug;
-                        world.get_tile_mut(*other_wall).terrain = Terrain::Debug;
-                    },
-                    None => {
-                        println!("Failed to find path");
-
-                        // Put the other wall back.
-                        world.get_tile_mut(*other_wall).terrain = Terrain::Wall;
-
-                        // Undraw feature.
-                        should_add = false;
-                        for tile in feature.iter() {
-                            world.get_tile_mut(tile.loc).terrain = Terrain::Nothing;
-                        }
-                    }
-                }
-            }
-            if should_add { features.push(feature); }
-        }*/
-
-        // Draw features.
-        /*for feature in features.iter() {
-            for wall in feature.walls() {
-                world.get_tile_mut(*wall).terrain = Terrain::Wall;
-            }
-
-            for floor in feature.floors() {
-                world.get_tile_mut(*floor).terrain = Terrain::Floor;
-            }
-        }*/
-
-        // Draw paths between rooms.
-        /*for _ in 0..20 {
-            // Pick two random walls from two random rooms.
-            let wall1 = features.iter().random(rng).walls().random(rng);
-            let wall2 = features.iter().random(rng).walls().random(rng);
-
-            // Dig out walls and find path.
-            world.get_tile_mut(*wall1).terrain = Terrain::Nothing;
-            world.get_tile_mut(*wall2).terrain = Terrain::Nothing;
-            println!("Searching for path from {:?} to {:?}...", wall1, wall2);
-            match astar::astar(ConnectRooms::new(&world, *wall1, *wall2)) {
-                Some(path) => {
-                    for loc in path.iter() {
-                        world.get_tile_mut(*loc).terrain = Terrain::Debug;
+                    // Generate a random feature.
+                    world.get_tile_mut(feat_orientation.2).terrain =
+                        Terrain::Nothing;
+                    let feature = feature_table.generate(rng)
+                        .place(feat_orientation.0, feat_orientation.1,
+                            feat_orientation.2);
+                    if world.can_fit(&feature) {
+                        world.draw_feature(&feature);
+                        world.get_tile_mut(feat_orientation.2).terrain =
+                            Terrain::Floor;
+                    } else {
+                        world.undraw_feature(&hallway);
+                        world.get_tile_mut(rand_wall.loc).terrain =
+                            Terrain::Wall;
                     }
                 },
                 None => {
-                    println!("Failed to find path");
-                    world.get_tile_mut(*wall1).terrain = Terrain::Wall;
-                    world.get_tile_mut(*wall2).terrain = Terrain::Wall;
+                    world.get_tile_mut(rand_wall.loc).terrain = Terrain::Wall;
+                    continue;
                 }
             }
-        }*/
+        }
 
-        // Pick a random floor in a random room to start on.
-        //let starting_loc = *features.iter().random(rng).floors().random(rng);
-        let starting_loc = Location::new(0, 0);
-        /*let tiles2: Vec<_> = ::std::iter::repeat(Terrain::Nothing)
-            .take((width * height) as usize)
-            .map(|terrain| Tile::new(terrain))
-            .collect();
-        let mut world2 = WorldMap {width: width, height: height, tiles: tiles2};
-        for i in width-10..width-5 {
-            for j in 0..height {
-                world2.get_tile_mut(Location::new(i, j)).terrain = Terrain::Debug;
-            }
-        }*/
+        // Draw walls for all floors next to nothing.
+        // TODO: Clean this up somehow.
+        let mut nothing_locs = Vec::<Location>::new();
+        world.tiles()
+            .filter(|t| t.terrain == Terrain::Floor)
+            .map(|t| nothing_locs.append(
+                &mut world.get_adjacent(t.loc).iter()
+                    .filter(|l| world.get_tile(**l).terrain == Terrain::Nothing)
+                    .map(|l| *l)
+                    .collect()))
+            .last();
+        nothing_locs.iter()
+            .map(|l| world.get_tile_mut(*l).terrain = Terrain::Wall)
+            .last();
+
+        // Pick a random floor in the first room to start on.
+        let starting_loc = *first_feature.floors().random(rng);
 
         (world, starting_loc)
     }
-    pub fn tiles(&self) -> TileIterator {
-        TileIterator::new(&self.tiles, self.width)
+    pub fn tiles(&self) -> ::std::slice::Iter<Tile> {
+        self.tiles.iter()
     }
     pub fn get_tile(&self, loc: Location) -> &Tile {
         let index = (loc.y * self.width + loc.x) as usize;
@@ -212,8 +184,12 @@ impl WorldMap {
         let mut adjacent = Vec::new();
         if loc.x > 0 { adjacent.push(Location::new(loc.x - 1, loc.y)); }
         if loc.y > 0 { adjacent.push(Location::new(loc.x, loc.y - 1)); }
-        if loc.x < self.width - 1 { adjacent.push(Location::new(loc.x + 1, loc.y)); }
-        if loc.y < self.height - 1 { adjacent.push(Location::new(loc.x, loc.y + 1)); }
+        if loc.x < self.width - 1 {
+            adjacent.push(Location::new(loc.x + 1, loc.y));
+        }
+        if loc.y < self.height - 1 {
+            adjacent.push(Location::new(loc.x, loc.y + 1));
+        }
 
         return adjacent;
     }
@@ -232,41 +208,22 @@ impl WorldMap {
 
         true
     }
+    fn draw_feature(&mut self, feature: &Feature) {
+        for tile in feature.iter() {
+            self.get_tile_mut(tile.loc).terrain = tile.terrain;
+        }
+    }
+    fn undraw_feature(&mut self, feature: &Feature) {
+        for tile in feature.iter() {
+            self.get_tile_mut(tile.loc).terrain = Terrain::Nothing;
+        }
+    }
 }
 
 
 #[derive(Copy, Clone, Debug)]
 pub struct Entity {
     id: u64
-}
-
-pub struct TileIterator<'a> {
-    tiles: &'a [Tile],
-    width: i32,
-    curr: usize
-}
-
-impl<'a> TileIterator<'a> {
-    pub fn new(tiles: &'a [Tile], width: i32) -> Self {
-        TileIterator {tiles: tiles, width: width, curr: 0}
-    }
-}
-
-impl<'a> Iterator for TileIterator<'a> {
-    type Item = (&'a Tile, Location);
-
-    fn next(&mut self) -> Option<(&'a Tile, Location)> {
-        if self.curr < self.tiles.len() {
-            let this = self.curr as i32;
-            self.curr += 1;
-            Some((
-                &self.tiles[this as usize],
-                Location {
-                    x: this % self.width,
-                    y: this / self.width
-                }))
-        } else { None }
-    }
 }
 
 // Trait to extend iterators to provide a random function.
@@ -326,7 +283,9 @@ impl<'a> ConnectRooms<'a> {
     }
 }
 
-impl<'a> astar::SearchProblem<Location, i32, NeighborIterator> for ConnectRooms<'a> {
+impl<'a> astar::SearchProblem<Location, i32, NeighborIterator>
+    for ConnectRooms<'a>
+{
     fn start(&self) -> Location {
         self.start
     }

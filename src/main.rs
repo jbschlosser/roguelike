@@ -23,19 +23,19 @@ fn main() {
     while !console.window_closed() {
         // Draw world.
         console.clear();
-        for (tile, location) in world.tiles() {
+        for tile in world.tiles() {
             match tile.terrain {
                 Terrain::Floor => {
-                    console.put_char(location.x, location.y, '.', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, '.', BackgroundFlag::Set);
                 },
                 Terrain::Wall => {
-                    console.put_char(location.x, location.y, '#', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, '#', BackgroundFlag::Set);
                 },
                 Terrain::Nothing => {
-                    console.put_char(location.x, location.y, ' ', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, ' ', BackgroundFlag::Set);
                 },
                 Terrain::Debug => {
-                    console.put_char(location.x, location.y, '^', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, '^', BackgroundFlag::Set);
                 }
             }
         }

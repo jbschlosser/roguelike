@@ -4,7 +4,7 @@ use tile::{Tile, Terrain, Location};
 // A feature in the world, consisting of some arrangement of terrain.
 // Features consist of relative coordinates; they can be placed at any
 // arbitrary location.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Feature {
     tiles: Vec<Tile>
 }
@@ -12,6 +12,117 @@ pub struct Feature {
 impl Feature {
     pub fn new(tiles: Vec<Tile>) -> Self {
         Feature { tiles: tiles }
+    }
+    pub fn room(width: i32, height: i32) -> Self {
+        let mut tiles = Vec::new();
+        for x in 0..width {
+            for y in 0..height {
+                let terrain =
+                    if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
+                        Terrain::Wall
+                    } else {
+                        Terrain::Floor
+                    };
+                tiles.push(Tile::new(Location::new(x, y), terrain));
+            }
+        }
+
+        Feature {tiles: tiles}
+    }
+    // TODO: Factor this out somehow; only the distance function
+    // changes between circles and diamonds.
+    pub fn diamond_room(radius: i32) -> Self {
+        let center = Location::new(0, 0);
+        let mut tiles = Vec::new();
+        for i in -radius..radius+1 {
+            for j in -radius..radius+1 {
+                let loc = Location::new(i, j);
+                let dist = loc.manhattan(&center);
+                if dist < radius {
+                    tiles.push(Tile::new(loc, Terrain::Floor));
+                } else if dist == radius {
+                    tiles.push(Tile::new(loc, Terrain::Wall));
+                }
+            }
+        }
+
+        Feature {tiles: tiles}
+    }
+    pub fn circle_room(radius: i32) -> Self {
+        let center = Location::new(0, 0);
+        let mut tiles = Vec::new();
+        for i in -radius..radius+1 {
+            for j in -radius..radius+1 {
+                let loc = Location::new(i, j);
+                let dist = loc.euclidean(&center);
+                if dist < radius {
+                    tiles.push(Tile::new(loc, Terrain::Floor));
+                } else if dist == radius {
+                    tiles.push(Tile::new(loc, Terrain::Wall));
+                }
+            }
+        }
+
+        Feature {tiles: tiles}
+    }
+    pub fn hallway(length: i32, is_horiz: bool) -> Self {
+        assert!(length > 0);
+        let mut tiles = Vec::new();
+        if is_horiz {
+            for i in 0..length {
+                //tiles.push(Tile::new(Location::new(i, -1), Terrain::Wall));
+                tiles.push(Tile::new(Location::new(i, 0), Terrain::Floor));
+                //tiles.push(Tile::new(Location::new(i, 1), Terrain::Wall));
+            }
+        } else {
+            for i in 0..length {
+                //tiles.push(Tile::new(Location::new(-1, i), Terrain::Wall));
+                tiles.push(Tile::new(Location::new(0, i), Terrain::Floor));
+                //tiles.push(Tile::new(Location::new(1, i), Terrain::Wall));
+            }
+        }
+
+        Feature {tiles: tiles}
+    }
+    pub fn translate(&self, x: i32, y: i32) -> Self {
+        Feature {
+            tiles: self.tiles.iter()
+                .map(|t| Tile::new(
+                    Location::new(t.loc.x + x, t.loc.y + y), t.terrain))
+                .collect()
+        }
+    }
+    pub fn place(&self, vert_align: VerticalAlignment,
+        horiz_align: HorizontalAlignment, loc: Location) -> Self
+    {
+        let horiz = match horiz_align {
+            HorizontalAlignment::Left => {
+                loc.x - self.min_x()
+            },
+            HorizontalAlignment::Center => {
+                loc.x - (self.min_x() +
+                    (self.max_x() -
+                    self.min_x() + 1) / 2)
+            },
+            HorizontalAlignment::Right => {
+                loc.x - self.max_x()
+            }
+        };
+        let vert = match vert_align {
+            VerticalAlignment::Top => {
+                loc.y - self.min_y()
+            },
+            VerticalAlignment::Center => {
+                loc.y - (self.min_y() +
+                    (self.max_y() -
+                    self.min_y() + 1) / 2)
+            },
+            VerticalAlignment::Bottom => {
+                loc.y - self.max_y()
+            }
+        };
+
+        self.translate(horiz, vert)
     }
     pub fn overlaps(&self, other: &Feature) -> bool {
         for a in self.tiles.iter() {
@@ -35,194 +146,72 @@ impl Feature {
             .filter(|c| c.terrain == Terrain::Floor)
             .map(|c| &c.loc))
     }
+    pub fn min_x(&self) -> i32 {
+        self.tiles.iter().map(|t| t.loc.x).min().unwrap()
+    }
+    pub fn max_x(&self) -> i32 {
+        self.tiles.iter().map(|t| t.loc.x).max().unwrap()
+    }
+    pub fn min_y(&self) -> i32 {
+        self.tiles.iter().map(|t| t.loc.y).min().unwrap()
+    }
+    pub fn max_y(&self) -> i32 {
+        self.tiles.iter().map(|t| t.loc.y).max().unwrap()
+    }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HorizontalAlignment {
     Left,
     Center,
     Right
 }
 
-#[derive(Clone, Copy, Debug)]
+impl HorizontalAlignment {
+    pub fn flip(self) -> Self {
+        match self {
+            HorizontalAlignment::Left => HorizontalAlignment::Right,
+            HorizontalAlignment::Right => HorizontalAlignment::Left,
+            HorizontalAlignment::Center => HorizontalAlignment::Center
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VerticalAlignment {
     Top,
     Center,
     Bottom
 }
 
-// Build features! Take the raw feature shape and translate it
-// according to the given alignment and absolute location.
-#[derive(Clone, Debug)]
-pub struct FeatureBuilder {
-    shape: Vec<Tile>,
-    location: Location,
-    horiz_align: HorizontalAlignment,
-    vert_align: VerticalAlignment
-}
-
-impl FeatureBuilder {
-    pub fn new(shape: Vec<Tile>) -> Self {
-        assert!(shape.len() > 0);
-        FeatureBuilder {
-            shape: shape,
-            location: Location::new(0, 0),
-            horiz_align: HorizontalAlignment::Left,
-            vert_align: VerticalAlignment::Top
+impl VerticalAlignment {
+    pub fn flip(self) -> Self {
+        match self {
+            VerticalAlignment::Top => VerticalAlignment::Bottom,
+            VerticalAlignment::Bottom => VerticalAlignment::Top,
+            VerticalAlignment::Center => VerticalAlignment::Center
         }
-    }
-    pub fn room(width: i32, height: i32) -> Self {
-        let mut shape = Vec::new();
-        for x in 0..width {
-            for y in 0..height {
-                let terrain =
-                    if x == 0 || x == width - 1 || y == 0 || y == height - 1 {
-                        Terrain::Wall
-                    } else {
-                        Terrain::Floor
-                    };
-                shape.push(Tile::new(Location::new(x, y), terrain));
-            }
-        }
-
-        FeatureBuilder::new(shape)
-    }
-    // TODO: Factor this out somehow; only the distance function
-    // changes between circles and diamonds.
-    pub fn diamond_room(radius: i32) -> Self {
-        let center = Location::new(0, 0);
-        let mut shape = Vec::new();
-        for i in -radius..radius+1 {
-            for j in -radius..radius+1 {
-                let loc = Location::new(i, j);
-                let dist = loc.manhattan(&center);
-                if dist < radius {
-                    shape.push(Tile::new(loc, Terrain::Floor));
-                } else if dist == radius {
-                    shape.push(Tile::new(loc, Terrain::Wall));
-                }
-            }
-        }
-
-        FeatureBuilder::new(shape)
-    }
-    pub fn circle_room(radius: i32) -> Self {
-        let center = Location::new(0, 0);
-        let mut shape = Vec::new();
-        for i in -radius..radius+1 {
-            for j in -radius..radius+1 {
-                let loc = Location::new(i, j);
-                let dist = loc.euclidean(&center);
-                if dist < radius {
-                    shape.push(Tile::new(loc, Terrain::Floor));
-                } else if dist == radius {
-                    shape.push(Tile::new(loc, Terrain::Wall));
-                }
-            }
-        }
-
-        FeatureBuilder::new(shape)
-    }
-    pub fn hallway(length: i32, is_horiz: bool) -> Self {
-        assert!(length > 0);
-        let mut shape = Vec::new();
-        if is_horiz {
-            for i in 0..length {
-                shape.push(Tile::new(Location::new(i, -1), Terrain::Wall));
-                shape.push(Tile::new(Location::new(i, 0), Terrain::Floor));
-                shape.push(Tile::new(Location::new(i, 1), Terrain::Wall));
-            }
-        } else {
-            for i in 0..length {
-                shape.push(Tile::new(Location::new(-1, i), Terrain::Wall));
-                shape.push(Tile::new(Location::new(0, i), Terrain::Floor));
-                shape.push(Tile::new(Location::new(1, i), Terrain::Wall));
-            }
-        }
-
-        FeatureBuilder::new(shape)
-    }
-    pub fn location(mut self, loc: Location) -> Self {
-        self.location = loc;
-        self
-    }
-    pub fn horiz_align(mut self, align: HorizontalAlignment) -> Self {
-        self.horiz_align = align;
-        self
-    }
-    pub fn vert_align(mut self, align: VerticalAlignment) -> Self {
-        self.vert_align = align;
-        self
-    }
-    pub fn build(&self) -> Feature {
-        let horiz = match self.horiz_align {
-            HorizontalAlignment::Left => {
-                self.location.x - Self::calc_min_x(&self.shape)
-            },
-            HorizontalAlignment::Center => {
-                self.location.x - (Self::calc_min_x(&self.shape) +
-                    (Self::calc_max_x(&self.shape) -
-                    Self::calc_min_x(&self.shape) + 1) / 2)
-            },
-            HorizontalAlignment::Right => {
-                self.location.x - Self::calc_max_x(&self.shape)
-            }
-        };
-        let vert = match self.vert_align {
-            VerticalAlignment::Top => {
-                self.location.y - Self::calc_min_y(&self.shape)
-            },
-            VerticalAlignment::Center => {
-                self.location.y - (Self::calc_min_y(&self.shape) +
-                    (Self::calc_max_y(&self.shape) -
-                    Self::calc_min_y(&self.shape) + 1) / 2)
-            },
-            VerticalAlignment::Bottom => {
-                self.location.y - Self::calc_max_y(&self.shape)
-            }
-        };
-
-        let tiles = self.shape.iter()
-            .map(|s| {
-                Tile::new(Location::new(s.loc.x + horiz, s.loc.y + vert), s.terrain)
-            })
-            .collect();
-
-        Feature::new(tiles)
-    }
-
-    fn calc_min_x(shape: &[Tile]) -> i32 {
-        shape.iter().map(|t| t.loc.x).min().unwrap()
-    }
-    fn calc_max_x(shape: &[Tile]) -> i32 {
-        shape.iter().map(|t| t.loc.x).max().unwrap()
-    }
-    fn calc_min_y(shape: &[Tile]) -> i32 {
-        shape.iter().map(|t| t.loc.y).min().unwrap()
-    }
-    fn calc_max_y(shape: &[Tile]) -> i32 {
-        shape.iter().map(|t| t.loc.y).max().unwrap()
     }
 }
 
-macro_rules! feat_shape {
+macro_rules! feature {
     ( $( ($x:expr, $y:expr) => $t:expr ),* ) => {
         {
-            vec![$( Tile::new(Location::new($x, $y), $t), )*]
+            Feature::new(vec![$( Tile::new(Location::new($x, $y), $t), )*])
         }
     };
 }
 
 #[test]
-fn test_build_feature() {
-    // Set up some feature shape:
+fn test_place_feature() {
+    // Set up a feature:
     //
     // ....
     // .##.
     // .##.
     // .#..
     // ....
-    let shape = feat_shape!(
+    let feature = feature!(
         (1, 1) => Terrain::Wall,
         (2, 1) => Terrain::Wall,
         (1, 2) => Terrain::Wall,
@@ -239,12 +228,10 @@ fn test_build_feature() {
     // ..##.
     // ..#..
     // .....
-    assert_eq!(FeatureBuilder::new(shape.clone())
-        .vert_align(VerticalAlignment::Top)
-        .horiz_align(HorizontalAlignment::Left)
-        .location(Location::new(2, 3))
-        .build().tiles,
-        feat_shape!(
+    assert_eq!(
+        feature.place(VerticalAlignment::Top, HorizontalAlignment::Left,
+            Location::new(2, 3)),
+        feature!(
             (2, 3) => Terrain::Wall,
             (3, 3) => Terrain::Wall,
             (2, 4) => Terrain::Wall,
@@ -258,12 +245,10 @@ fn test_build_feature() {
     // ....##.
     // ....#..
     // .......
-    assert_eq!(FeatureBuilder::new(shape)
-        .vert_align(VerticalAlignment::Bottom)
-        .horiz_align(HorizontalAlignment::Right)
-        .location(Location::new(5, 2))
-        .build().tiles,
-        feat_shape!(
+    assert_eq!(
+        feature.place(VerticalAlignment::Bottom, HorizontalAlignment::Right,
+            Location::new(5, 2)),
+        feature!(
             (4, 0) => Terrain::Wall,
             (5, 0) => Terrain::Wall,
             (4, 1) => Terrain::Wall,
@@ -271,12 +256,12 @@ fn test_build_feature() {
             (4, 2) => Terrain::Wall
         ));
 
-    // Set up a square feature shape.
+    // Set up a square feature.
     //
     // ###
     // ###
     // ###
-    let square = feat_shape!(
+    let square = feature!(
         (0, 0) => Terrain::Wall,
         (1, 0) => Terrain::Wall,
         (2, 0) => Terrain::Wall,
@@ -294,12 +279,10 @@ fn test_build_feature() {
     // ...###.
     // ...###.
     // .......
-    assert_eq!(FeatureBuilder::new(square)
-        .vert_align(VerticalAlignment::Center)
-        .horiz_align(HorizontalAlignment::Center)
-        .location(Location::new(4, 1))
-        .build().tiles,
-        feat_shape!(
+    assert_eq!(
+        square.place(VerticalAlignment::Center, HorizontalAlignment::Center,
+            Location::new(4, 1)),
+        feature!(
             (3, 0) => Terrain::Wall,
             (4, 0) => Terrain::Wall,
             (5, 0) => Terrain::Wall,
