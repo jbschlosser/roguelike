@@ -147,18 +147,17 @@ impl WorldMap {
             }
         }
 
-        // Draw walls for all floors next to nothing.
-        // TODO: Clean this up somehow.
-        let mut nothing_locs = Vec::<Location>::new();
-        world.tiles()
-            .filter(|t| t.terrain == Terrain::Floor)
-            .map(|t| nothing_locs.append(
-                &mut world.get_adjacent(t.loc).iter()
-                    .filter(|l| world.get_tile(**l).terrain == Terrain::Nothing)
-                    .map(|l| *l)
-                    .collect()))
-            .last();
-        nothing_locs.iter()
+        // Draw walls for all nothing tiles next to floors.
+        let make_wall_locs: Vec<Location> = world.tiles()
+            .filter(|t| t.terrain == Terrain::Nothing)
+            .filter(|t| {
+                world.get_adjacent(t.loc).iter()
+                    .filter(|nl| world.get_tile(**nl).terrain == Terrain::Floor)
+                    .count() > 0
+            })
+            .map(|t| t.loc)
+            .collect();
+        make_wall_locs.iter()
             .map(|l| world.get_tile_mut(*l).terrain = Terrain::Wall)
             .last();
 
@@ -182,13 +181,18 @@ impl WorldMap {
     }
     fn get_adjacent(&self, loc: Location) -> Vec<Location> {
         let mut adjacent = Vec::new();
-        if loc.x > 0 { adjacent.push(Location::new(loc.x - 1, loc.y)); }
-        if loc.y > 0 { adjacent.push(Location::new(loc.x, loc.y - 1)); }
-        if loc.x < self.width - 1 {
-            adjacent.push(Location::new(loc.x + 1, loc.y));
-        }
-        if loc.y < self.height - 1 {
-            adjacent.push(Location::new(loc.x, loc.y + 1));
+        for i in -1..2 {
+            for j in -1..2 {
+                if !(i == 0 && j == 0) {
+                    let new_x = loc.x + i;
+                    let new_y = loc.y + j;
+                    if new_x >= 0 && new_x < self.width &&
+                        new_y >= 0 && new_y < self.height
+                    {
+                        adjacent.push(Location::new(new_x, new_y));
+                    }
+                }
+            }
         }
 
         return adjacent;
@@ -241,7 +245,7 @@ impl<I: Iterator> IterRandomExt<I::Item> for I where I::Item: Clone {
 }
 
 // Iterates through neighbors; used for A* algorithm.
-struct NeighborIterator {
+/*struct NeighborIterator {
     adjacent: Vec<Location>,
     current: usize
 }
@@ -298,5 +302,4 @@ impl<'a> astar::SearchProblem<Location, i32, NeighborIterator>
     fn neighbors(&self, at: &Location) -> NeighborIterator {
         NeighborIterator::new(&self.world, *at)
     }
-}
-
+}*/

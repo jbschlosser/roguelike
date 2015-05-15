@@ -9,8 +9,8 @@ use tcod::input::KeyCode::{Up, Down, Left, Right, Escape};
 use world::{WorldMap, Terrain, Location};
 
 fn main() {
-    let width = 80;
-    let height = 50;
+    let width = 150; //80;
+    let height = 100; //50;
     let mut console = RootInitializer::new()
         .size(width, height)
         .title("Roguelike")

@@ -1,4 +1,3 @@
-#![feature(collections)]
 mod world_map;
 mod random;
 mod feature;
