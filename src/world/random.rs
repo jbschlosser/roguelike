@@ -32,3 +32,17 @@ impl<T, R: Rng> RandomTable<T, R> {
         panic!("BUG: Random table was built incorrectly.");
     }
 }
+
+// Trait to extend iterators to provide a random function.
+pub trait IterRandomExt<T> {
+    fn random<R: Rng>(&mut self, rng: &mut R) -> T;
+}
+
+impl<I: Iterator> IterRandomExt<I::Item> for I where I::Item: Clone {
+    fn random<R: Rng>(&mut self, rng: &mut R) -> I::Item {
+        let elements: Vec<_> = self.collect();
+        assert!(elements.len() > 0);
+        let random = rng.gen_range::<usize>(0, elements.len());
+        elements[random].clone()
+    }
+}

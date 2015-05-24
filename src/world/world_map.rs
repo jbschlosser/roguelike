@@ -1,6 +1,6 @@
 extern crate rand;
 
-use random::RandomTable;
+use random::{RandomTable, IterRandomExt};
 use tile::{Tile, Terrain, Location};
 use feature::{Feature, VerticalAlignment, HorizontalAlignment};
 use self::rand::{Rng};
@@ -149,6 +149,20 @@ impl WorldMap {
             }
         }
 
+        // Clear out walls with three or more floors adjacent
+        // to them in cardinal directions.
+        let make_floor_locs: Vec<Location> = world.tiles()
+            .filter(|t| t.terrain == Terrain::Wall &&
+                world.get_adjacent(t.loc, false).iter()
+                    .filter(|a| world.get_tile(**a).terrain == Terrain::Floor)
+                    .count() >= 3)
+            .map(|t| t.loc.clone())
+            .collect();
+
+        for loc in make_floor_locs.iter() {
+            world.get_tile_mut(*loc).terrain = Terrain::Floor;
+        }
+
         // Pick a random floor in the first room to start on.
         let starting_loc = *first_feature.floors().random(rng);
 
@@ -167,11 +181,14 @@ impl WorldMap {
         assert!(index < self.tiles.len());
         &mut self.tiles[index]
     }
-    fn get_adjacent(&self, loc: Location) -> Vec<Location> {
+    fn get_adjacent(&self, loc: Location, with_diag: bool) -> Vec<Location> {
         let mut adjacent = Vec::new();
         for i in -1..2 {
             for j in -1..2 {
-                if !(i == 0 && j == 0) {
+                if i != 0 || j != 0 {
+                    if !with_diag && (i != 0 && j != 0) {
+                        continue;
+                    }
                     let new_x = loc.x + i;
                     let new_y = loc.y + j;
                     if new_x >= 0 && new_x < self.width &&
@@ -216,7 +233,7 @@ impl WorldMap {
         let mut make_wall_locs =
             Vec::with_capacity((self.width * self.height) as usize);
         for tile in self.tiles.iter().filter(|t| t.terrain == Terrain::Floor) {
-            for adj in self.get_adjacent(tile.loc).iter()
+            for adj in self.get_adjacent(tile.loc, true).iter()
                 .filter(|l| self.get_tile(**l).terrain == Terrain::Nothing)
             {
                 make_wall_locs.push(*adj);
@@ -233,77 +250,3 @@ impl WorldMap {
 pub struct Entity {
     id: u64
 }
-
-// Trait to extend iterators to provide a random function.
-trait IterRandomExt<T> {
-    fn random<R: Rng>(&mut self, rng: &mut R) -> T;
-}
-
-impl<I: Iterator> IterRandomExt<I::Item> for I where I::Item: Clone {
-    fn random<R: Rng>(&mut self, rng: &mut R) -> I::Item {
-        let elements: Vec<_> = self.collect();
-        assert!(elements.len() > 0);
-        let random = rng.gen_range::<usize>(0, elements.len());
-        elements[random].clone()
-    }
-}
-
-// Iterates through neighbors; used for A* algorithm.
-/*struct NeighborIterator {
-    adjacent: Vec<Location>,
-    current: usize
-}
-
-impl NeighborIterator {
-    pub fn new(world: &WorldMap, loc: Location) -> Self {
-        let adjacent = world.get_adjacent(loc).iter()
-            .map(|x| *x)
-            .filter(|loc| world.get_tile(*loc).terrain == Terrain::Nothing)
-            .collect();
-
-        NeighborIterator { adjacent: adjacent, current: 0 }
-    }
-}
-
-impl Iterator for NeighborIterator {
-    type Item = (Location, i32);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.current < self.adjacent.len() {
-            self.current += 1;
-            Some((self.adjacent[self.current - 1], 1))
-        } else {
-            None
-        }
-    }
-}
-
-// Search problem for connecting rooms with A* algorithm.
-struct ConnectRooms<'a> {
-    world: &'a WorldMap,
-    start: Location,
-    end: Location
-}
-
-impl<'a> ConnectRooms<'a> {
-    pub fn new(world: &'a WorldMap, start: Location, end: Location) -> Self {
-        ConnectRooms { world: world, start: start, end: end }
-    }
-}
-
-impl<'a> astar::SearchProblem<Location, i32, NeighborIterator>
-    for ConnectRooms<'a>
-{
-    fn start(&self) -> Location {
-        self.start
-    }
-    fn is_end(&self, loc: &Location) -> bool {
-        *loc == self.end
-    }
-    fn heuristic(&self, loc: &Location) -> i32 {
-        loc.manhattan(&self.end)
-    }
-    fn neighbors(&self, at: &Location) -> NeighborIterator {
-        NeighborIterator::new(&self.world, *at)
-    }
-}*/

@@ -43,16 +43,20 @@ fn main() {
         for tile in world.tiles() {
             match (tile.terrain, explored.contains(&tile.loc)) {
                 (Terrain::Floor, true) => {
-                    console.put_char(tile.loc.x, tile.loc.y, '.', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, '.',
+                        BackgroundFlag::Set);
                 },
                 (Terrain::Wall, true) => {
-                    console.put_char(tile.loc.x, tile.loc.y, '#', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, '#',
+                        BackgroundFlag::Set);
                 },
                 (Terrain::Debug, true) => {
-                    console.put_char(tile.loc.x, tile.loc.y, '^', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, 'X',
+                        BackgroundFlag::Set);
                 },
                 _ => {
-                    console.put_char(tile.loc.x, tile.loc.y, ' ', BackgroundFlag::Set);
+                    console.put_char(tile.loc.x, tile.loc.y, ' ',
+                        BackgroundFlag::Set);
                 }
             }
         }
