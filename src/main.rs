@@ -1,7 +1,9 @@
+extern crate itertools;
 extern crate rand;
 extern crate tcod;
 extern crate world;
 
+use itertools::Itertools;
 use rand::StdRng;
 use std::collections::HashSet;
 use tcod::input::Key::{Special, Printable};
@@ -37,6 +39,7 @@ fn main() {
     let mut player_loc = starting_loc;
     explore(player_loc, player_radius, &mut explored);
 
+    let mut dmap = world.create_dijkstra_map(&vec![player_loc]);
     while !console.window_closed() {
         // Draw world.
         //console.clear();
@@ -106,10 +109,12 @@ fn main() {
                 Terrain::Floor => {
                     player_loc = new_loc;
                     explore(player_loc, player_radius, &mut explored);
+                    dmap = world.create_dijkstra_map(&vec![player_loc]);
                 },
                 Terrain::Debug => {
                     player_loc = new_loc;
                     explore(player_loc, player_radius, &mut explored);
+                    dmap = world.create_dijkstra_map(&vec![player_loc]);
                 },
                 Terrain::Wall => {},
                 Terrain::Nothing => {}

@@ -19,6 +19,9 @@ impl Location {
             other.x as f32, other.y as f32);
         ((x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1)).sqrt() as i32
     }
+    pub fn to_matrix_index(&self) -> (usize, usize) {
+        (self.y as usize, self.x as usize)
+    }
 }
 
 impl ::std::fmt::Debug for Location {
@@ -28,7 +31,7 @@ impl ::std::fmt::Debug for Location {
     }
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub enum Terrain {
     Debug,
     Nothing,
@@ -36,7 +39,7 @@ pub enum Terrain {
     Wall
 }
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct Tile {
     pub loc: Location,
     pub terrain: Terrain
