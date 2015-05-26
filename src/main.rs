@@ -9,20 +9,41 @@ use std::collections::HashSet;
 use tcod::input::Key::{Special, Printable};
 use tcod::input::KeyCode::{Up, Down, Left, Right, Escape};
 use tcod::{Console, BackgroundFlag, RootInitializer};
-use world::{WorldMap, Terrain, Location};
+use world::{WorldMap, Terrain, Location, Dijkstra};
 
-fn explore(loc: Location, radius: i32, explored: &mut HashSet<Location>) {
+fn explore(loc: Location, radius: i32, explored: &mut HashSet<Location>,
+    unexplored: &mut HashSet<Location>) {
     let center = Location::new(0, 0);
     for i in -radius..radius+1 {
         for j in -radius..radius+1 {
             let circle_loc = Location::new(i, j);
             let dist = circle_loc.euclidean(&center);
             if dist <= radius {
-                explored.insert(Location::new(loc.x + circle_loc.x,
-                    loc.y + circle_loc.y));
+                let explored_loc =
+                    Location::new(loc.x + circle_loc.x, loc.y + circle_loc.y);
+                explored.insert(explored_loc);
+                unexplored.remove(&explored_loc);
             }
         }
     }
+}
+
+fn draw_world(console: &mut tcod::console::Root, world: &WorldMap,
+    explored: &HashSet<Location>, player_loc: Location) {
+    //console.clear();
+    for tile in world.tiles() {
+        let ascii = match (tile.terrain, explored.contains(&tile.loc)) {
+            (Terrain::Floor, true) => '.',
+            (Terrain::Wall, true) => '#',
+            (Terrain::Debug, true) => 'X',
+            _ => ' '
+        };
+        console.put_char(tile.loc.x, tile.loc.y, ascii,
+            BackgroundFlag::Set);
+    }
+
+    console.put_char(player_loc.x, player_loc.y, '@', BackgroundFlag::Set);
+    console.flush();
 }
 
 fn main() {
@@ -36,37 +57,16 @@ fn main() {
     let mut rng = StdRng::new().unwrap();
     let (world, starting_loc) = WorldMap::generate(&mut rng, width, height);
     let mut explored = HashSet::new();
+    let mut unexplored: HashSet<Location> = world.tiles()
+        .filter(|t| t.terrain == Terrain::Floor || t.terrain == Terrain::Wall)
+        .map(|t| t.loc)
+        .collect();
     let mut player_loc = starting_loc;
-    explore(player_loc, player_radius, &mut explored);
+    explore(player_loc, player_radius, &mut explored, &mut unexplored);
 
-    let mut dmap = world.create_dijkstra_map(&vec![player_loc]);
     while !console.window_closed() {
         // Draw world.
-        //console.clear();
-        for tile in world.tiles() {
-            match (tile.terrain, explored.contains(&tile.loc)) {
-                (Terrain::Floor, true) => {
-                    console.put_char(tile.loc.x, tile.loc.y, '.',
-                        BackgroundFlag::Set);
-                },
-                (Terrain::Wall, true) => {
-                    console.put_char(tile.loc.x, tile.loc.y, '#',
-                        BackgroundFlag::Set);
-                },
-                (Terrain::Debug, true) => {
-                    console.put_char(tile.loc.x, tile.loc.y, 'X',
-                        BackgroundFlag::Set);
-                },
-                _ => {
-                    console.put_char(tile.loc.x, tile.loc.y, ' ',
-                        BackgroundFlag::Set);
-                }
-            }
-        }
-
-        // Draw character.
-        console.put_char(player_loc.x, player_loc.y, '@', BackgroundFlag::Set);
-        console.flush();
+        draw_world(&mut console, &world, &explored, player_loc);
 
         // Check for keypress.
         let keypress = console.wait_for_keypress(true);
@@ -103,18 +103,27 @@ fn main() {
                 Printable('n') => {
                     Location::new(player_loc.x + 1, player_loc.y + 1)
                 },
+                Printable('o') => {
+                    while !unexplored.is_empty() {
+                        let goals: Vec<Location> = unexplored.iter().map(|l| *l).collect();
+                        let dmap = Dijkstra::new(&world, goals, 1000);
+                        let possible: Vec<Location> = dmap
+                            .sorted_neighbors(&player_loc).iter()
+                            .filter(|l| world.get_tile(**l).terrain == Terrain::Floor)
+                            .map(|l| *l)
+                            .collect();
+                        player_loc = possible[0];
+                        explore(player_loc, player_radius, &mut explored, &mut unexplored);
+                        draw_world(&mut console, &world, &explored, player_loc);
+                    }
+                    player_loc
+                }
                 _ => player_loc
             };
             match world.get_tile(new_loc).terrain {
-                Terrain::Floor => {
+                Terrain::Floor | Terrain::Debug => {
                     player_loc = new_loc;
-                    explore(player_loc, player_radius, &mut explored);
-                    dmap = world.create_dijkstra_map(&vec![player_loc]);
-                },
-                Terrain::Debug => {
-                    player_loc = new_loc;
-                    explore(player_loc, player_radius, &mut explored);
-                    dmap = world.create_dijkstra_map(&vec![player_loc]);
+                    explore(player_loc, player_radius, &mut explored, &mut unexplored);
                 },
                 Terrain::Wall => {},
                 Terrain::Nothing => {}
